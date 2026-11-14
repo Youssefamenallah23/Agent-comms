@@ -94,6 +94,7 @@
     <div class="panel"><h2>Live Agent Negotiation Trace</h2><div id="trace"></div></div>
     <div class="panel"><h2>Notifications</h2><div id="notifications"></div></div>
     <div class="panel"><h2>Relocations Applied</h2><div id="moved"></div></div>
+    <div class="panel"><h2>Agent Status</h2><div id="agentStatus"><div class="empty">Loading…</div></div></div>
   </div>
 </div>
 <script>
@@ -170,6 +171,12 @@ function render(s){
 
 async function refresh(){
   try{ render(await api("/state")); }catch(e){ console.error(e); }
+  try{
+    const d = await api("/agents/status");
+    document.getElementById("agentStatus").innerHTML = d.agents.map(a =>
+      `<div class="msg note"><span class="who">${esc(a.name)}</span>
+       <div class="body">${esc(a.role)}<br>events ${a.events} · sent ${a.messages_sent} · received ${a.messages_received}</div></div>`).join("");
+  }catch(e){ console.error(e); }
 }
 refresh();
 setInterval(refresh, 3000);

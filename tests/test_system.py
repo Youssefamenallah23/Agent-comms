@@ -69,6 +69,8 @@ def test_coordinator_resolves_seeded_conflict_end_to_end():
     # agent-to-agent messages were logged and notifications dispatched
     assert len(repo.messages_like(f"cf-{conflict['id']}-%")) >= 6
     assert len(repo.recent_notifications(50)) >= 2
+    # the applied move taught the system where this instructor ended up
+    assert repo.top_building_preference(moved["instructor"]) == "C"
 
 
 def test_capacity_conflict_escalates_when_no_safe_option():
@@ -189,6 +191,15 @@ def test_analytics_csv_export():
     assert "text/csv" in r.headers["content-type"]
     assert "utilization_percent" in r.text
     assert "Auditorium-A" in r.text
+
+
+def test_building_preferences_are_recorded_and_ranked():
+    repo.record_building_preference("Dr. Singh", "B", 2)
+    repo.record_building_preference("Dr. Singh", "C")
+    assert repo.top_building_preference("Dr. Singh") == "B"
+    repo.record_building_preference("Dr. Singh", "C")
+    repo.record_building_preference("Dr. Singh", "C")
+    assert repo.top_building_preference("Dr. Singh") == "C"
 
 
 def test_create_booking_confirms_or_offers_ranked_alternatives():
