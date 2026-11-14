@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Student Desk — Smart Campus</title>
 <style>
-/* hallmark stamp · page: student-desk · genre: app · theme: campus-night · shape: single desk (inbox arrives next) · hero: headline + sentence + composer · nav: quiet header link · footer: quiet · imagery: none · type: one system family · motion: micro-rise · tokens: :root local · date: 2026-11-14 */
+/* hallmark stamp · page: student-desk · genre: app · theme: campus-night · shape: split workspace, chat + inbox · hero: headline + sentence + composer · nav: quiet header link · footer: quiet · imagery: none · type: one system family · motion: micro-rise · tokens: :root local · date: 2026-11-14 */
 /* critique: floor 0 fail · reflex waived: imagery — a live-data tool page; photographs would be invented decoration */
 /* finish answered: gold-on-ink kept AA, focus rings instant, empty and error states honest */
 :root{
@@ -68,6 +68,24 @@ button.primary[disabled]{opacity:.55;cursor:progress}
   border-radius:999px;padding:7px 14px;font:inherit;font-size:13px;cursor:pointer;
 }
 .chip:hover{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+.chip.is-on{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+
+/* workspace: conversation left, notifications right */
+.workspace{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;align-items:start;margin-top:26px}
+@media(max-width:880px){.workspace{grid-template-columns:1fr}}
+.inbox{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-2);
+  box-shadow:var(--shadow-2);padding:18px;
+}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.feed{display:flex;flex-direction:column;max-height:56vh;overflow-y:auto}
+.note{padding:12px 2px;border-bottom:1px solid var(--line)}
+.note:last-child{border-bottom:none}
+.note .top{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--ink-2);margin-bottom:3px}
+.note .st{color:var(--ok)}
+.note .subject{font-weight:650;font-size:14px;margin-bottom:2px}
+.note .body{font-size:13px;color:var(--ink-2)}
+.note.fresh{animation:rise .28s ease-out both}
 
 /* the transcript */
 .desk{margin-top:26px}
@@ -123,12 +141,27 @@ footer a{border-bottom:1px solid var(--line);text-decoration:none;padding-bottom
     </div>
   </section>
 
-  <section class="desk">
-    <div class="desk-label">Conversation with the Assistant Agent</div>
-    <div class="log" id="log" aria-live="polite">
-      <p class="empty" id="empty">Ask anything below, or tap a suggestion. Your conversation is kept for this browser.</p>
-    </div>
-  </section>
+  <div class="workspace">
+    <section class="desk">
+      <div class="desk-label">Conversation with the Assistant Agent</div>
+      <div class="log" id="log" aria-live="polite">
+        <p class="empty" id="empty">Ask anything below, or tap a suggestion. Your conversation is kept for this browser.</p>
+      </div>
+    </section>
+
+    <aside class="inbox" aria-label="Notifications from the campus agents">
+      <div class="desk-label">Notifications</div>
+      <div class="filters" id="filters">
+        <button class="chip is-on" type="button" data-f="all">All</button>
+        <button class="chip" type="button" data-f="students">Students</button>
+        <button class="chip" type="button" data-f="instructor">Instructors</button>
+        <button class="chip" type="button" data-f="admin">Admin</button>
+      </div>
+      <div class="feed" id="feed">
+        <p class="empty" id="feedEmpty">No notifications yet. They appear the moment the agents resolve a conflict on the campus.</p>
+      </div>
+    </aside>
+  </div>
 
   <footer>
     Part of the Smart Campus multi-agent system. Answers come from live SQLite data; the agents negotiate schedule changes on the <a href="/">ops dashboard</a>.
@@ -202,6 +235,42 @@ document.getElementById("chips").addEventListener("click", e => {
     history.forEach(h => turn(h.role === "user" ? "user" : "agent", h.content, null, false));
   } catch (e) { /* first visit: nothing to restore */ }
 })();
+
+/* notifications inbox: live feed with audience filters */
+const feed = document.getElementById("feed");
+const feedEmpty = document.getElementById("feedEmpty");
+let audienceFilter = "all";
+
+function renderFeed(items) {
+  feed.querySelectorAll(".note").forEach(n => n.remove());
+  const shown = items.filter(n =>
+    audienceFilter === "all" || String(n.audience).startsWith(audienceFilter));
+  if (!shown.length) { feedEmpty.style.display = "block"; return; }
+  feedEmpty.style.display = "none";
+  shown.forEach((n, i) => {
+    const el = document.createElement("div");
+    el.className = "note" + (i === shown.length - 1 ? " fresh" : "");
+    el.innerHTML = `<div class="top"><span>${esc(n.audience)}</span><span class="st">${esc(n.status)}</span></div>
+      <div class="subject">${esc(n.subject)}</div>
+      <div class="body">${esc(n.body)}</div>`;
+    feed.appendChild(el);
+  });
+}
+
+async function pollNotifications() {
+  try { renderFeed(await api("/notifications?limit=30")); } catch (e) { /* keep last view */ }
+}
+pollNotifications();
+setInterval(pollNotifications, 6000);
+
+document.getElementById("filters").addEventListener("click", e => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  audienceFilter = chip.dataset.f;
+  document.querySelectorAll("#filters .chip")
+    .forEach(c => c.classList.toggle("is-on", c === chip));
+  pollNotifications();
+});
 </script>
 </body>
 </html>
