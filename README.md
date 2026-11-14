@@ -116,7 +116,24 @@ LLM feature has a rule-based fallback.
 | POST | `/api/proposals/{id}/approve` · `/reject` | Human-in-the-loop |
 | POST | `/api/agents/assistant/chat` | Student chatbot |
 | GET | `/api/agents/analytics/report` | Utilization & recommendations |
+| GET | `/api/notifications` | Public notifications feed (Student Desk) |
+| GET | `/api/agents/assistant/history` | Restore a chat session after reload |
 | GET | `/api/conflicts/{id}` · `/api/messages` | Full audit trail |
+
+## 🎓 Student Desk (`/student`)
+
+A student-facing portal served at **`/student`** (designed with the Hallmark
+design system):
+
+- **Ask the campus** — chat with the Assistant Agent: free rooms, course
+  schedules, room changes, utilization. Suggestion chips for common questions,
+  conversation restored on reload via the history endpoint, and a visible
+  "answered via" tag showing which intent served the answer (rule-based or LLM).
+- **Notifications inbox** — the same alerts the Notification Agent dispatches
+  (room changes, approvals, escalations), filtered by audience: students,
+  instructors or admin, refreshing live every few seconds.
+
+The Assistant is strictly read-only: it can inform, never mutate the campus.
 
 ## ⚙️ Policy knobs (`.env`)
 
