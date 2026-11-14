@@ -194,6 +194,44 @@ def test_create_booking_confirms_or_offers_ranked_alternatives():
     assert all("Lab" in a["room_name"] for a in detail["alternatives"])
 
 
+def test_cancel_booking_endpoint():
+    client = TestClient(app)
+    created = client.post("/api/bookings", json={
+        "course_code": "MATH490", "room_name": "B-202",
+        "day": "Fri", "start_time": "16:00", "end_time": "18:00"})
+    assert created.status_code == 201
+    booking_id = created.json()["booking_id"]
+    cancelled = client.post(f"/api/bookings/{booking_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["cancelled"] is True
+    again = client.post(f"/api/bookings/{booking_id}/cancel")
+    assert again.status_code == 409
+
+
+def test_room_request_auto_confirms_strong_fit():
+    client = TestClient(app)
+    r = client.post("/api/requests", json={
+        "course_code": "CS340", "day": "Tue",
+        "start_time": "08:00", "end_time": "10:00"})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["status"] == "confirmed"
+    assert body["room"] == "Lab-CS-1"
+    assert body["score"] >= 0.75
+
+
+def test_room_request_propposes_shifts_when_no_same_slot_fit():
+    client = TestClient(app)
+    r = client.post("/api/requests", json={
+        "course_code": "CS101", "day": "Tue",
+        "start_time": "10:00", "end_time": "12:00"})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["status"] == "needs_confirmation"
+    assert body["proposals"], "shifted proposals must be offered"
+    assert all(p["room"] == "Auditorium-A" for p in body["proposals"])
+
+
 def test_notifications_feed_and_chat_history_endpoints():
     client = TestClient(app)
     feed = client.get("/api/notifications?limit=5").json()

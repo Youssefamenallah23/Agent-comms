@@ -180,6 +180,71 @@ async def create_booking(request: BookingRequest):
     }
 
 
+@router.post("/bookings/{booking_id}/cancel")
+async def cancel_booking_endpoint(booking_id: int):
+    booking = repo.get_booking_full(booking_id)
+    if not booking:
+        raise HTTPException(status_code=404, detail="booking not found")
+    if booking["status"] == "cancelled":
+        raise HTTPException(status_code=409, detail="booking already cancelled")
+    repo.cancel_booking(booking_id)
+    scan = await runtime.get_agent("schedule").run_scan()
+    return {
+        "cancelled": True,
+        "course": booking["code"],
+        "room": booking["room_name"],
+        "new_conflicts_after_scan": scan["new_conflicts"],
+    }
+
+
+@router.post("/requests", status_code=201)
+async def room_request(request: RoomRequest):
+    """A student asks for a room for a course. If a strong fit exists at the
+    requested slot it is booked immediately; otherwise the agents propose
+    time-shifted alternatives for confirmation instead of refusing."""
+    course = repo.get_course_by_code(request.course_code.strip().upper())
+    if not course:
+        raise HTTPException(status_code=404, detail=f"unknown course {request.course_code}")
+    _validate_slot(request.day, request.start_time, request.end_time)
+
+    candidates = (await _availability_for_course(
+        course, request.day, request.start_time, request.end_time))["candidates"]
+
+    if candidates and candidates[0]["score"] >= settings.auto_apply_threshold:
+        best = candidates[0]
+        booking_id = repo.insert_booking(course["id"], best["room_id"], request.day,
+                                         request.start_time, request.end_time,
+                                         "student-request")
+        scan = await runtime.get_agent("schedule").run_scan()
+        return {
+            "status": "confirmed",
+            "booking_id": booking_id,
+            "room": best["room_name"],
+            "score": best["score"],
+            "alternatives": candidates[1:4],
+            "new_conflicts_after_scan": scan["new_conflicts"],
+        }
+
+    proposals = [{"room": c["room_name"], "day": request.day,
+                  "start": request.start_time, "end": request.end_time,
+                  "score": c["score"]} for c in candidates[:3]]
+    for shift in (60, -60, 120, -120):
+        shifted_start = repo.add_minutes(request.start_time, shift)
+        shifted_end = repo.add_minutes(request.end_time, shift)
+        if shifted_start < "08:00" or shifted_end > "18:00":
+            continue
+        shifted = (await _availability_for_course(
+            course, request.day, shifted_start, shifted_end))["candidates"]
+        for c in shifted[:2]:
+            proposals.append({"room": c["room_name"], "day": request.day,
+                              "start": shifted_start, "end": shifted_end,
+                              "score": c["score"]})
+    if not proposals:
+        return {"status": "unfulfillable", "proposals": []}
+    proposals.sort(key=lambda p: -p["score"])
+    return {"status": "needs_confirmation", "proposals": proposals[:6]}
+
+
 # ------------------------------------------------------------------ agents
 @router.post("/agents/schedule/scan")
 async def schedule_scan():
