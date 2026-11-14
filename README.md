@@ -118,7 +118,24 @@ LLM feature has a rule-based fallback.
 | GET | `/api/agents/analytics/report` | Utilization & recommendations |
 | GET | `/api/notifications` | Public notifications feed (Student Desk) |
 | GET | `/api/agents/assistant/history` | Restore a chat session after reload |
+| POST | `/api/bookings` | Book a room; rejected requests get **ranked alternatives** |
+| POST | `/api/bookings/{id}/cancel` | Cancel a booking, campus re-scans itself |
+| POST | `/api/requests` | Student room request: auto-confirm or **time-shifted proposals** |
+| GET | `/api/agents/analytics/report.csv` | Utilization report as CSV |
 | GET | `/api/conflicts/{id}` · `/api/messages` | Full audit trail |
+
+## 🧠 Agentic behaviours added in v1.1
+
+- **Campus life is interactive** — you can create bookings (with hard-constraint
+  validation and agent-ranked alternatives on rejection), cancel them, and make
+  student room requests that auto-confirm strong fits or propose time shifts.
+- **The agents learn** — every accepted reallocation records the instructor's
+  building; future negotiations prefer buildings the instructor was moved into
+  before (a tiny preference memory, grown from its own decisions).
+- **Self-monitoring** — every mutation triggers a fresh conflict scan, so the
+  campus re-checks itself after each change.
+- **Concurrency-safe storage** — SQLite busy-timeout plus bounded retries; the
+  LLM cache is bounded so long sessions stay predictable.
 
 ## 🎓 Student Desk (`/student`)
 
