@@ -1,16 +1,57 @@
 """FastAPI routes - public API, agent endpoints and simulation controls."""
 import asyncio
+import csv
+import io
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from .. import repo, runtime
-from ..models import (AvailabilityQuery, ChatRequest, InjectRequest, RoomStatusRequest,
-                      SeedRequest)
+from ..config import settings
+from ..models import (AvailabilityQuery, BookingRequest, ChatRequest, InjectRequest,
+                      RoomRequest, RoomStatusRequest, SeedRequest)
 from ..services import pipeline
 from ..simulation import seed
 
 router = APIRouter(prefix="/api")
+
+_VALID_DAYS = {"Mon", "Tue", "Wed", "Thu", "Fri"}
+
+
+def _validate_slot(day: str, start: str, end: str) -> None:
+    if day not in _VALID_DAYS:
+        raise HTTPException(status_code=422,
+                            detail=f"day must be one of {sorted(_VALID_DAYS)}")
+    try:
+        if not (8 * 60 <= repo.minutes(start) < repo.minutes(end) <= 18 * 60):
+            raise ValueError
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=422,
+                            detail="times must be HH:MM inside 08:00-18:00, start before end")
+
+
+async def _availability_for_course(course: dict, day: str, start: str, end: str,
+                                   exclude_room_ids=()) -> dict:
+    """Ask the Availability Agent for ranked rooms that satisfy a course's needs."""
+    return await runtime.get_agent("availability").run_query({
+        "day": day,
+        "start_time": start,
+        "end_time": end,
+        "min_capacity": course["enrolled"],
+        "required_equipment": course["required_equipment"],
+        "exclude_room_ids": list(exclude_room_ids),
+        "prefer_building": None,
+        "instructor": course["instructor"],
+        "exclude_booking_ids": [],
+        "context": {
+            "enrolled": course["enrolled"],
+            "required_equipment": course["required_equipment"],
+            "current_building": None,
+            "current_slot": {"day": day, "start": start, "end": end},
+        },
+    })
 
 
 # ------------------------------------------------------------------ system
@@ -88,6 +129,55 @@ async def seed_route(request: SeedRequest):
 @router.post("/simulate/inject")
 async def inject_route(request: InjectRequest):
     return seed.inject_conflict(request.kind)
+
+
+# ------------------------------------------------------------------ campus life
+@router.post("/bookings", status_code=201)
+async def create_booking(request: BookingRequest):
+    """Book a room for a course. Hard constraints are validated first; if the
+    request cannot be honoured, the Availability Agent proposes ranked
+    alternatives instead of a blunt refusal."""
+    course = repo.get_course_by_code(request.course_code.strip().upper())
+    if not course:
+        raise HTTPException(status_code=404, detail=f"unknown course {request.course_code}")
+    room_row = repo.query_one("SELECT id FROM rooms WHERE name = ?", (request.room_name,))
+    if not room_row:
+        raise HTTPException(status_code=404, detail=f"unknown room {request.room_name}")
+    room = repo.get_room(room_row["id"])
+    _validate_slot(request.day, request.start_time, request.end_time)
+
+    problems = []
+    if room["status"] != "active":
+        problems.append("room_under_maintenance")
+    if course["enrolled"] > room["capacity"]:
+        problems.append("capacity_overflow")
+    missing = [e for e in course["required_equipment"] if e not in room["equipment"]]
+    if missing:
+        problems.append("missing_equipment: " + ", ".join(missing))
+    if not repo.room_free(room["id"], request.day, request.start_time, request.end_time):
+        problems.append("room_busy")
+    if not repo.instructor_free(course["instructor"], request.day,
+                                request.start_time, request.end_time):
+        problems.append("instructor_busy")
+
+    if problems:
+        alternatives = (await _availability_for_course(
+            course, request.day, request.start_time, request.end_time))["candidates"]
+        raise HTTPException(status_code=409, detail={
+            "problems": problems,
+            "alternatives": alternatives[:5],
+        })
+
+    booking_id = repo.insert_booking(course["id"], room["id"], request.day,
+                                     request.start_time, request.end_time, "api")
+    scan = await runtime.get_agent("schedule").run_scan()
+    return {
+        "booking_id": booking_id,
+        "status": "confirmed",
+        "room": room["name"],
+        "course": course["code"],
+        "new_conflicts_after_scan": scan["new_conflicts"],
+    }
 
 
 # ------------------------------------------------------------------ agents

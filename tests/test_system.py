@@ -173,6 +173,27 @@ def test_agent_status_reports_activity_heartbeat():
     assert "enabled" in data["llm"]
 
 
+def test_create_booking_confirms_or_offers_ranked_alternatives():
+    client = TestClient(app)
+    ok = client.post("/api/bookings", json={
+        "course_code": "MATH490", "room_name": "B-202",
+        "day": "Fri", "start_time": "14:00", "end_time": "16:00"})
+    assert ok.status_code == 201
+    body = ok.json()
+    assert body["status"] == "confirmed" and body["room"] == "B-202"
+    assert body["new_conflicts_after_scan"] == 0
+
+    # CS340 needs computers, B-202 has none: rejected WITH ranked alternatives
+    bad = client.post("/api/bookings", json={
+        "course_code": "CS340", "room_name": "B-202",
+        "day": "Fri", "start_time": "08:00", "end_time": "10:00"})
+    assert bad.status_code == 409
+    detail = bad.json()["detail"]
+    assert any(p.startswith("missing_equipment") for p in detail["problems"])
+    assert len(detail["alternatives"]) >= 1
+    assert all("Lab" in a["room_name"] for a in detail["alternatives"])
+
+
 def test_notifications_feed_and_chat_history_endpoints():
     client = TestClient(app)
     feed = client.get("/api/notifications?limit=5").json()

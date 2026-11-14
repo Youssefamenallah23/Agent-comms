@@ -30,3 +30,18 @@ class ChatRequest(BaseModel):
 
 class RoomStatusRequest(BaseModel):
     status: Literal["active", "maintenance"]
+
+
+class BookingRequest(BaseModel):
+    course_code: str
+    room_name: str
+    day: str
+    start_time: str
+    end_time: str
+
+
+class RoomRequest(BaseModel):
+    course_code: str
+    day: str
+    start_time: str
+    end_time: str
