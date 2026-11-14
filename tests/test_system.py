@@ -240,6 +240,47 @@ def test_assistant_teacher_and_room_details_intents():
     assert "seats 40" in room_answer["reply"] and "projector" in room_answer["reply"]
 
 
+def test_auth_register_login_and_scoped_notifications():
+    client = TestClient(app)
+    registered = client.post("/api/auth/register", json={
+        "name": "Ada", "email": "ada@campus.edu", "password": "password123"})
+    assert registered.status_code == 201
+    token = registered.json()["token"]
+    assert registered.json()["student"]["email"] == "ada@campus.edu"
+
+    headers = {"Authorization": f"Bearer {token}"}
+    me = client.get("/api/auth/me", headers=headers).json()
+    assert me["email"] == "ada@campus.edu" and me["courses"] == []
+
+    bad = client.post("/api/auth/login",
+                      json={"email": "ada@campus.edu", "password": "wrongpass1"})
+    assert bad.status_code == 401
+
+    unauth = client.get("/api/auth/me")
+    assert unauth.status_code == 401
+
+    enrolled = client.post("/api/auth/enroll",
+                           json={"course_code": "CS101"}, headers=headers)
+    assert enrolled.status_code == 200 and enrolled.json()["courses"] == ["CS101"]
+
+    feed = client.get("/api/auth/my/notifications", headers=headers).json()
+    assert feed, "the demo campus has resolved-conflict notifications"
+    assert all(n["audience"] == "admin" or n["audience"].endswith("CS101") for n in feed)
+
+    schedule = client.get("/api/auth/my/schedule", headers=headers).json()
+    assert schedule and all(s["course"] == "CS101" for s in schedule)
+
+
+def test_demo_student_is_seeded_and_can_log_in():
+    client = TestClient(app)
+    r = client.post("/api/auth/login",
+                    json={"email": "demo@campus.edu", "password": "demo1234"})
+    assert r.status_code == 200
+    me = client.get("/api/auth/me",
+                    headers={"Authorization": f"Bearer {r.json()['token']}"}).json()
+    assert me["courses"] == ["CS101", "MA201"]
+
+
 def test_analytics_csv_export():
     client = TestClient(app)
     r = client.get("/api/agents/analytics/report.csv")

@@ -39,6 +39,8 @@ async def lifespan(app: FastAPI):
     if settings.seed_on_start and repo.is_empty():
         seed.seed_data()
         logging.getLogger("campus").info("Seeded demo campus data")
+    if seed.seed_demo_student():
+        logging.getLogger("campus").info("Seeded demo student (demo@campus.edu / demo1234)")
     runtime.setup()
     tasks = []
     if settings.background_tasks:

@@ -78,6 +78,19 @@ def _instructor_free(instructor: str, day: str, start: str, end: str) -> bool:
     return repo.instructor_free(instructor, day, start, end)
 
 
+def seed_demo_student() -> bool:
+    """A ready-to-use demo account: demo@campus.edu / demo1234, enrolled in
+    CS101 and MA201 so the Student Desk shows a personalised desk instantly."""
+    from .. import auth as campus_auth
+    if repo.get_student_by_email("demo@campus.edu"):
+        return False
+    student_id = repo.create_student("Demo Student", "demo@campus.edu",
+                                     campus_auth.hash_password("demo1234"))
+    for code in ("CS101", "MA201"):
+        repo.enroll(student_id, code)
+    return True
+
+
 def inject_conflict(kind: str) -> dict:
     """Deliberately create a realistic conflict so agents have something to solve."""
     courses = {c["code"]: c for c in repo.all_courses()}
