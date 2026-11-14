@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Campus - Multi-Agent System</title>
+<style>
+  :root{--bg:#0b1020;--panel:#131a30;--panel2:#1a2342;--line:#253154;--text:#e8ecff;
+    --muted:#8b96c9;--accent:#5b8cff;--ok:#3ecf8e;--warn:#ffb454;--bad:#ff6b81;--purple:#b18cff}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;padding:20px}
+  h1{font-size:22px}h2{font-size:13px;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:10px}
+  .sub{color:var(--muted);font-size:12px;margin-top:4px}
+  header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;gap:16px;flex-wrap:wrap}
+  .pills{display:flex;gap:8px;flex-wrap:wrap}
+  .pill{font-size:11px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .pill.ok{color:var(--ok);border-color:var(--ok)}.pill.bad{color:var(--bad);border-color:var(--bad)}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center}
+  button{background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px}
+  button:hover{border-color:var(--accent);color:#fff}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  select{background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:8px;border-radius:8px;font-size:12px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card .v{font-size:24px;font-weight:700}.card .l{font-size:11px;color:var(--muted);margin-top:4px}
+  .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
+  @media(max-width:1000px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{color:var(--muted);text-align:left;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:8px;border-bottom:1px solid rgba(37,49,84,.5);vertical-align:top}
+  .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.5px}
+  .tag.high{background:rgba(255,107,129,.15);color:var(--bad)}
+  .tag.medium{background:rgba(255,180,84,.15);color:var(--warn)}
+  .tag.low{background:rgba(62,207,142,.15);color:var(--ok)}
+  .tag.open{background:rgba(255,107,129,.15);color:var(--bad)}
+  .tag.resolved{background:rgba(62,207,142,.15);color:var(--ok)}
+  .tag.pending_approval{background:rgba(255,180,84,.15);color:var(--warn)}
+  .tag.escalated{background:rgba(177,140,255,.15);color:var(--purple)}
+  .tag.pending{background:rgba(139,150,201,.15);color:var(--muted)}
+  .tag.sent{background:rgba(62,207,142,.15);color:var(--ok)}
+  .tag.proposed{background:rgba(91,140,255,.15);color:var(--accent)}
+  .tag.applied{background:rgba(62,207,142,.15);color:var(--ok)}
+  .tag.awaiting_approval{background:rgba(255,180,84,.15);color:var(--warn)}
+  .tag.rejected{background:rgba(139,150,201,.15);color:var(--muted)}
+  .msg{border-left:3px solid var(--line);padding:6px 10px;margin-bottom:6px;background:var(--panel2);border-radius:0 8px 8px 0;font-size:12px}
+  .msg .who{font-weight:700;font-size:11px}
+  .msg.request{border-color:var(--accent)}.msg.response{border-color:var(--ok)}
+  .msg.reasoning{border-color:var(--purple)}.msg.note{border-color:var(--muted)}
+  .msg.ack{border-color:#4dd0e1}.msg.error{border-color:var(--bad)}
+  .msg .body{color:var(--muted);margin-top:2px;white-space:pre-wrap;word-break:break-word}
+  .bar-ext{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden;margin-top:4px}
+  .bar-ext i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--ok))}
+  .muted{color:var(--muted)}.small{font-size:11px}
+  .empty{color:var(--muted);font-size:12px;font-style:italic}
+  .actions{display:flex;gap:6px;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🎓 Smart Campus — Multi-Agent System</h1>
+    <div class="sub">Schedule · Availability · Coordinator · Notifications · Assistant · Analytics</div>
+  </div>
+  <div class="pills" id="pills"></div>
+</header>
+
+<div class="bar">
+  <button class="primary" onclick="runPipeline()">▶ Run Scan & Auto-Resolve</button>
+  <button onclick="reseed()">♻ Seed Demo Data</button>
+  <select id="conflictKind">
+    <option value="double_booking">Inject: double booking</option>
+    <option value="capacity_overflow">Inject: capacity overflow</option>
+    <option value="equipment_mismatch">Inject: equipment mismatch</option>
+  </select>
+  <button onclick="inject()">⚡ Inject conflict</button>
+  <span class="sub" id="busy"></span>
+</div>
+
+<div class="cards" id="cards"></div>
+
+<div class="grid">
+  <div>
+    <div class="panel"><h2>Conflicts & Proposals</h2><div id="conflicts"></div></div>
+    <div class="panel"><h2>Rooms & Utilization</h2>
+      <table><thead><tr><th>Room</th><th>Building</th><th>Capacity</th><th>Equipment</th><th style="width:130px">Utilization</th></tr></thead>
+      <tbody id="rooms"></tbody></table>
+    </div>
+  </div>
+  <div>
+    <div class="panel"><h2>Live Agent Negotiation Trace</h2><div id="trace"></div></div>
+    <div class="panel"><h2>Notifications</h2><div id="notifications"></div></div>
+    <div class="panel"><h2>Relocations Applied</h2><div id="moved"></div></div>
+  </div>
+</div>
+<script>
+const api = (path, opts) => fetch("/api" + path, opts).then(r => r.json());
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&","<":"<",">":">",'"':""","'":"&#39;"}[c]));
+const busy = (on, label) => document.getElementById("busy").textContent = on ? ("⏳ " + (label||"working…")) : "";
+
+async function runPipeline(){
+  busy(true, "agents negotiating…");
+  try{ const r = await api("/pipeline/scan-and-resolve", {method:"POST"});
+       alert(JSON.stringify(r, null, 1).slice(0, 600)); } finally { busy(false); refresh(); }
+}
+async function reseed(){ busy(true,"seeding…");
+  try{ await api("/simulate/seed",{method:"POST",body:JSON.stringify({force:true}),headers:{"Content-Type":"application/json"}}); } finally{ busy(false); refresh(); } }
+async function inject(){ busy(true,"injecting…");
+  try{ const k=document.getElementById("conflictKind").value;
+       const r = await api("/simulate/inject",{method:"POST",body:JSON.stringify({kind:k}),headers:{"Content-Type":"application/json"}});
+       alert(r.detail || "injected"); } finally { busy(false); refresh(); } }
+async function approve(id){ busy(true,"applying…");
+  try{ await api(`/proposals/${id}/approve`,{method:"POST"}); } finally{ busy(false); refresh(); } }
+async function reject(id){ busy(true,"rejecting…");
+  try{ await api(`/proposals/${id}/reject`,{method:"POST"}); } finally{ busy(false); refresh(); } }
+
+function render(s){
+  const st = s.stats;
+  document.getElementById("pills").innerHTML =
+    `<span class="pill ${st.llm.enabled?'ok':'bad'}">LLM: ${st.llm.enabled ? esc(st.llm.providers.join(",")) : "rule-based"}</span>
+     <span class="pill">DB: SQLite</span>
+     <span class="pill ok">6 agents online</span>`;
+  document.getElementById("cards").innerHTML = [
+    [st.bookings,"Active bookings"],[st.conflicts_open,"Open conflicts"],
+    [st.conflicts_resolved,"Resolved"],[st.pending_approvals,"Awaiting approval"],
+    [st.relocations,"Relocations"],[st.notifications_sent,"Notifications"]
+  ].map(([v,l]) => `<div class="card"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+
+  document.getElementById("conflicts").innerHTML = s.conflicts.length ? s.conflicts.map(c => {
+    const bp = c.best_proposal;
+    return `<table style="margin-bottom:10px"><tr><td>
+      <span class="tag ${esc(c.severity)}">${esc(c.severity)}</span>
+      <span class="tag ${esc(c.status)}">${esc(c.status)}</span>
+      <b>#${c.id}</b> ${esc(c.type)}
+      <div class="muted small" style="margin-top:4px">${esc(c.description)}</div>
+      ${c.analysis ? `<div class="small" style="color:var(--purple);margin-top:4px">🧠 ${esc((c.analysis.explanation||"").slice(0,300))}</div>` : ""}
+      ${bp ? `<div class="small" style="margin-top:6px">Proposal <span class="tag ${esc(bp.status)}">${esc(bp.status)}</span>
+             score <b>${bp.score}</b> → ${esc(bp.new_room||"")} ${esc(bp.new_day||"")} ${esc(bp.new_start||"")}-${esc(bp.new_end||"")} (round ${bp.round})
+             <div class="muted small" style="margin-top:2px">${esc((bp.reasoning||"").slice(0,260))}</div></div>
+             ${bp.status==="awaiting_approval" ? `<div class="actions"><button class="primary" onclick="approve(${bp.id})">✔ Approve</button><button onclick="reject(${bp.id})">✖ Reject</button></div>` : ""}` : ""}
+      </td></tr></table>`;
+  }).join("") : `<div class="empty">No conflicts — the campus is at peace. Inject one to see the agents negotiate.</div>`;
+
+  document.getElementById("rooms").innerHTML = s.rooms.map(r =>
+    `<tr><td><b>${esc(r.name)}</b>${r.status!=="active"?' <span class="tag escalated">maintenance</span>':""}</td>
+     <td>${esc(r.building)}</td><td>${r.capacity}</td>
+     <td class="small muted">${esc((r.equipment||[]).join(", ")||"—")}</td>
+     <td><div class="small">${r.utilization}% <span class="muted">(${r.booked_hours}h)</span></div>
+     <div class="bar-ext"><i style="width:${Math.min(100,r.utilization)}%"></i></div></td></tr>`).join("");
+
+  document.getElementById("trace").innerHTML = s.messages.length ? s.messages.map(m =>
+    `<div class="msg ${esc(m.role)}"><span class="who">${esc(m.from_agent)} → ${esc(m.to_agent)}</span>
+     <span class="muted small"> [${esc(m.role)}] ${esc(m.topic)}</span>
+     <div class="body">${esc(JSON.stringify(m.content).slice(0,240))}</div></div>`).join("")
+    : `<div class="empty">No agent messages yet — run the pipeline.</div>`;
+
+  document.getElementById("notifications").innerHTML = s.notifications.length ? s.notifications.map(n =>
+    `<div class="msg note"><span class="who">${esc(n.audience)}</span> <span class="tag ${esc(n.status)}">${esc(n.status)}</span>
+     <div class="body"><b>${esc(n.subject)}</b><br>${esc(n.body)}</div></div>`).join("")
+    : `<div class="empty">Nothing sent yet.</div>`;
+
+  document.getElementById("moved").innerHTML = s.moved.length ? s.moved.map(m =>
+    `<div class="msg response"><span class="who">${esc(m.code)}</span>
+     <div class="body">${esc(m.day)} ${esc(m.start)}-${esc(m.end)}: ${esc(m.from||"?")} → <b>${esc(m.to)}</b></div></div>`).join("")
+    : `<div class="empty">No relocations yet.</div>`;
+}
+
+async function refresh(){
+  try{ render(await api("/state")); }catch(e){ console.error(e); }
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
