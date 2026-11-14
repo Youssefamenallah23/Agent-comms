@@ -2,6 +2,7 @@
 import json
 import os
 import sqlite3
+import time
 from contextlib import closing
 from datetime import datetime, timezone
 
@@ -12,9 +13,10 @@ _SCHEMA = os.path.join(os.path.dirname(__file__), "schema.sql")
 
 # ---------------------------------------------------------------- core utils
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(settings.db_path)
+    conn = sqlite3.connect(settings.db_path, timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
@@ -42,10 +44,19 @@ def query_one(sql: str, params=()):
 
 
 def execute(sql: str, params=()):
-    with closing(connect()) as conn:
-        cur = conn.execute(sql, params)
-        conn.commit()
-        return cur.lastrowid
+    last_error = None
+    for attempt in range(3):
+        try:
+            with closing(connect()) as conn:
+                cur = conn.execute(sql, params)
+                conn.commit()
+                return cur.lastrowid
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            last_error = exc
+            time.sleep(0.05 * (attempt + 1))
+    raise last_error
 
 
 def is_empty() -> bool:
@@ -218,6 +229,17 @@ def rooms_free(day: str, start: str, end: str, exclude_room_ids=()) -> list[dict
         if b["room_id"] in free_ids and overlaps(b["start_time"], b["end_time"], start, end):
             free_ids.discard(b["room_id"])
     return [r for r in rooms if r["id"] in free_ids]
+
+
+def instructor_free(instructor: str, day: str, start: str, end: str,
+                    exclude_booking_ids=()) -> bool:
+    """True if the instructor has no other overlapping booking that day."""
+    for booking in all_bookings():
+        if (booking["instructor"] == instructor and booking["day"] == day
+                and booking["id"] not in exclude_booking_ids
+                and overlaps(booking["start_time"], booking["end_time"], start, end)):
+            return False
+    return True
 
 
 def room_utilization() -> list[dict]:
@@ -399,4 +421,24 @@ def conflict_stats() -> dict:
     by_type = {r["type"]: r["c"] for r in query(
         "SELECT type, COUNT(*) c FROM conflicts GROUP BY type")}
     return {"by_status": by_status, "by_type": by_type}
+
+
+# ---------------------------------------------------------------- learned preferences
+def record_building_preference(instructor: str, building: str, weight: float = 1.0) -> None:
+    """Agents learn: every accepted reallocation strengthens the instructor's
+    association with the building they were moved into."""
+    execute(
+        "INSERT INTO preferences (instructor, building, weight) VALUES (?,?,?)"
+        " ON CONFLICT(instructor, building) DO UPDATE SET weight = weight + excluded.weight",
+        (instructor, building, weight),
+    )
+
+
+def top_building_preference(instructor: str):
+    row = query_one(
+        "SELECT building FROM preferences WHERE instructor = ?"
+        " ORDER BY weight DESC LIMIT 1",
+        (instructor,),
+    )
+    return row["building"] if row else None
 

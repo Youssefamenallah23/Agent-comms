@@ -99,3 +99,11 @@ CREATE TABLE IF NOT EXISTS assistant_chats (
   content TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS preferences (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  instructor TEXT NOT NULL,
+  building TEXT NOT NULL,
+  weight REAL NOT NULL DEFAULT 1.0,
+  UNIQUE(instructor, building)
+);
