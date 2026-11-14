@@ -5,7 +5,8 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from .. import repo, runtime
-from ..models import AvailabilityQuery, ChatRequest, InjectRequest, SeedRequest
+from ..models import (AvailabilityQuery, ChatRequest, InjectRequest, RoomStatusRequest,
+                      SeedRequest)
 from ..services import pipeline
 from ..simulation import seed
 
@@ -200,3 +201,47 @@ async def messages(correlation_id: str | None = None):
     if correlation_id:
         return repo.messages_like(correlation_id.replace("%", "") + "%", 300)
     return repo.recent_messages(100)
+
+
+# ------------------------------------------------------------------ campus ops
+@router.post("/rooms/{room_id}/maintenance")
+async def room_maintenance(room_id: int, request: RoomStatusRequest):
+    """Take a room offline for maintenance (or bring it back). Bookings in a
+    maintenance room are flagged as room_unavailable conflicts on the next
+    scan and the agents relocate them automatically."""
+    room = repo.get_room(room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="room not found")
+    repo.set_room_status(room_id, request.status)
+    runtime.get_agent("schedule").log_event(
+        "room_status_changed", {"room": room["name"], "status": request.status})
+    return {"room": room["name"], "status": request.status,
+            "affected": len([b for b in repo.all_bookings()
+                             if b["room_id"] == room_id and b["status"] != "cancelled"])}
+
+
+@router.get("/agents/status")
+async def agents_status():
+    """Per-agent heartbeat: events logged and bus messages sent/received."""
+    roles = {
+        "schedule": "Scans the timetable and detects conflicts",
+        "availability": "Finds and ranks free rooms for requests",
+        "coordinator": "Negotiates reallocations and applies policy",
+        "notifications": "Delivers alerts to students, instructors and admins",
+        "assistant": "Answers student questions about the campus",
+        "analytics": "Reports utilization and recommends optimizations",
+    }
+    events = {r["agent"]: r["events"] for r in
+              repo.query("SELECT agent, COUNT(*) AS events FROM events_log GROUP BY agent")}
+    sent = {r["agent"]: r["sent"] for r in
+            repo.query("SELECT from_agent AS agent, COUNT(*) AS sent FROM messages GROUP BY from_agent")}
+    received = {r["agent"]: r["received"] for r in
+                repo.query("SELECT to_agent AS agent, COUNT(*) AS received FROM messages GROUP BY to_agent")}
+    agents = [{
+        "name": name,
+        "role": role,
+        "events": events.get(name, 0),
+        "messages_sent": sent.get(name, 0),
+        "messages_received": received.get(name, 0),
+    } for name, role in roles.items()]
+    return {"llm": runtime.llm_status(), "agents": agents}

@@ -26,3 +26,7 @@ class AvailabilityQuery(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str = "web"
     message: str
+
+
+class RoomStatusRequest(BaseModel):
+    status: Literal["active", "maintenance"]
