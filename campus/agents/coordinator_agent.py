@@ -94,6 +94,11 @@ def apply_proposal(proposal_id: int) -> dict:
         if other["id"] != proposal_id and other["status"] == "proposed":
             repo.set_proposal_status(other["id"], "rejected")
     repo.set_conflict_status(conflict["id"], "resolved")
+    # agents learn: remember where this instructor ended up
+    if mover and proposal["new_room_id"]:
+        room = repo.get_room(proposal["new_room_id"])
+        if room:
+            repo.record_building_preference(mover["instructor"], room["building"])
     return {"ok": True, "moved_booking_id": proposal["booking_id"], "proposal": proposal}
 
 
@@ -114,6 +119,12 @@ class CoordinatorAgent(BaseAgent):
         self.graph = self._build_graph()
 
     # ------------------------------------------------------------ helpers
+    def _preferred_building(self, mover: dict) -> str | None:
+        """Round-1 preference: the building the instructor was last happiest
+        in (learned from accepted reallocations), else their current building."""
+        learned = repo.top_building_preference(mover["instructor"])
+        return learned or mover["building"]
+
     def _trace(self, to: str, role: str, topic: str, content: dict) -> dict:
         return {"trace": [{"to": to, "role": role, "topic": topic, "content": content}]}
 
@@ -164,7 +175,7 @@ class CoordinatorAgent(BaseAgent):
             "min_capacity": mover["enrolled"],
             "required_equipment": mover["required_equipment"],
             "exclude_room_ids": exclude,
-            "prefer_building": None if rnd >= 2 else mover["building"],
+            "prefer_building": None if rnd >= 2 else self._preferred_building(mover),
             "instructor": mover["instructor"],
             "exclude_booking_ids": [b["id"] for b in state["bookings"]],
             "context": {
