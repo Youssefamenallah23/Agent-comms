@@ -64,8 +64,9 @@ def is_empty() -> bool:
 
 
 def clear_all_data() -> None:
-    for table in ("assistant_chats", "notifications", "messages", "proposals",
-                  "conflicts", "bookings", "courses", "rooms", "events_log"):
+    for table in ("enrollments", "auth_tokens", "students", "assistant_chats",
+                  "notifications", "messages", "proposals", "conflicts",
+                  "bookings", "courses", "rooms", "events_log", "preferences"):
         execute(f"DELETE FROM {table}")
 
 
@@ -465,4 +466,60 @@ def top_building_preference(instructor: str):
         (instructor,),
     )
     return row["building"] if row else None
+
+
+# ---------------------------------------------------------------- students & auth
+def create_student(name: str, email: str, password_hash: str) -> int:
+    return execute(
+        "INSERT INTO students (name, email, password_hash, created_at) VALUES (?,?,?,?)",
+        (name, email, password_hash, now_iso()),
+    )
+
+
+def get_student(student_id: int):
+    return query_one("SELECT * FROM students WHERE id = ?", (student_id,))
+
+
+def get_student_by_email(email: str):
+    return query_one("SELECT * FROM students WHERE email = ?", (email,))
+
+
+def create_auth_token(student_id: int, token: str) -> None:
+    execute("INSERT INTO auth_tokens (token, student_id, created_at) VALUES (?,?,?)",
+            (token, student_id, now_iso()))
+
+
+def student_for_token(token: str):
+    return query_one(
+        "SELECT s.id, s.name, s.email FROM auth_tokens t"
+        " JOIN students s ON s.id = t.student_id WHERE t.token = ?",
+        (token,),
+    )
+
+
+def enroll(student_id: int, course_code: str) -> None:
+    execute("INSERT OR IGNORE INTO enrollments (student_id, course_code) VALUES (?,?)",
+            (student_id, course_code))
+
+
+def my_courses(student_id: int) -> list:
+    return [r["course_code"] for r in query(
+        "SELECT course_code FROM enrollments WHERE student_id = ? ORDER BY course_code",
+        (student_id,),
+    )]
+
+
+def my_notifications(student_id: int, limit: int = 50) -> list[dict]:
+    """Notifications addressed to the courses this student is enrolled in,
+    plus admin broadcasts."""
+    codes = set(my_courses(student_id))
+    relevant = []
+    for notification in recent_notifications(500):
+        audience = notification["audience"]
+        if audience == "admin" or (audience.startswith("students:")
+                                   and audience.split(":", 1)[1] in codes):
+            relevant.append(notification)
+        if len(relevant) >= limit:
+            break
+    return relevant
 

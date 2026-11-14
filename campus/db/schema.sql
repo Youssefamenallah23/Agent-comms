@@ -107,3 +107,24 @@ CREATE TABLE IF NOT EXISTS preferences (
   weight REAL NOT NULL DEFAULT 1.0,
   UNIQUE(instructor, building)
 );
+
+CREATE TABLE IF NOT EXISTS students (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_tokens (
+  token TEXT PRIMARY KEY,
+  student_id INTEGER NOT NULL REFERENCES students(id),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS enrollments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL REFERENCES students(id),
+  course_code TEXT NOT NULL,
+  UNIQUE(student_id, course_code)
+);
