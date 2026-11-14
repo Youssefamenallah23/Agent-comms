@@ -69,6 +69,20 @@ class AssistantAgent(BaseAgent):
                 return "Recent room changes: " + "; ".join(lines) + ".", "room_changes"
             return "No rooms have been changed recently.", "room_changes"
 
+        if "who teaches" in text or ("teach" in text and course_match):
+            if course_match:
+                course = repo.get_course_by_code(course_match.group(1))
+                if course:
+                    return (f"{course['code']} ({course['title']}) is taught by "
+                            f"{course['instructor']} with {course['enrolled']} enrolled students.",
+                            "course_teacher")
+
+        room = next((r for r in repo.all_rooms() if r["name"].lower() in text), None)
+        if room and any(w in text for w in ("capacity", "seats", "equipment", "details", "about", "what")):
+            equipment = ", ".join(room["equipment"]) or "none"
+            return (f"{room['name']} seats {room['capacity']} in building {room['building']}; "
+                    f"equipment: {equipment}. Status: {room['status']}.", "room_details")
+
         if "report" in text or "utilization" in text:
             rooms = repo.room_utilization()
             top = sorted(rooms, key=lambda r: -r["utilization"])[:3]

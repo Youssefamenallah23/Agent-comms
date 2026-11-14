@@ -173,6 +173,15 @@ def test_agent_status_reports_activity_heartbeat():
     assert "enabled" in data["llm"]
 
 
+def test_assistant_teacher_and_room_details_intents():
+    answer = asyncio.run(get_agent("assistant").chat("intent-test", "who teaches CS101?"))
+    assert answer["intent"] == "course_teacher"
+    assert "Dr. Chen" in answer["reply"]
+    room_answer = asyncio.run(get_agent("assistant").chat("intent-test", "what about room B-201?"))
+    assert room_answer["intent"] == "room_details"
+    assert "seats 40" in room_answer["reply"] and "projector" in room_answer["reply"]
+
+
 def test_create_booking_confirms_or_offers_ranked_alternatives():
     client = TestClient(app)
     ok = client.post("/api/bookings", json={
