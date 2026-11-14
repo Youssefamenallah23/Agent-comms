@@ -291,6 +291,21 @@ async def analytics_report():
     return await runtime.get_agent("analytics").report()
 
 
+@router.get("/agents/analytics/report.csv")
+async def analytics_report_csv():
+    """Utilization report as CSV for spreadsheets and archiving."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["room", "building", "capacity", "booked_hours",
+                     "utilization_percent", "status"])
+    for room in repo.room_utilization():
+        writer.writerow([room["name"], room["building"], room["capacity"],
+                         room["booked_hours"], room["utilization"], room["status"]])
+    return Response(content=buffer.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition":
+                             "attachment; filename=campus-utilization.csv"})
+
+
 # generic agent endpoint (used by the http transport of the message bus)
 @router.post("/agents/{agent_name}/{action}")
 async def agent_call(agent_name: str, action: str, payload: dict | None = None):

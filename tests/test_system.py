@@ -182,6 +182,15 @@ def test_assistant_teacher_and_room_details_intents():
     assert "seats 40" in room_answer["reply"] and "projector" in room_answer["reply"]
 
 
+def test_analytics_csv_export():
+    client = TestClient(app)
+    r = client.get("/api/agents/analytics/report.csv")
+    assert r.status_code == 200
+    assert "text/csv" in r.headers["content-type"]
+    assert "utilization_percent" in r.text
+    assert "Auditorium-A" in r.text
+
+
 def test_create_booking_confirms_or_offers_ranked_alternatives():
     client = TestClient(app)
     ok = client.post("/api/bookings", json={
