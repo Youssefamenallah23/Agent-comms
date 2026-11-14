@@ -171,3 +171,19 @@ def test_agent_status_reports_activity_heartbeat():
     assert coordinator["messages_sent"] >= 2, "coordinator must have used the bus"
     assert coordinator["events"] >= 2, "coordinator must have logged events"
     assert "enabled" in data["llm"]
+
+
+def test_notifications_feed_and_chat_history_endpoints():
+    client = TestClient(app)
+    feed = client.get("/api/notifications?limit=5").json()
+    assert isinstance(feed, list) and len(feed) >= 1
+    assert {"audience", "subject", "body", "status"} <= set(feed[0].keys())
+
+    session_id = "test-session-123"
+    chat = client.post("/api/agents/assistant/chat",
+                       json={"session_id": session_id, "message": "where is CS101?"})
+    assert chat.status_code == 200
+    history = client.get(f"/api/agents/assistant/history?session_id={session_id}").json()
+    assert [h["role"] for h in history] == ["user", "assistant"]
+    assert history[0]["content"] == "where is CS101?"
+    assert "CS101" in history[1]["content"]
