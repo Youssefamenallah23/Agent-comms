@@ -75,11 +75,7 @@ def seed_data(force: bool = False) -> bool:
 
 
 def _instructor_free(instructor: str, day: str, start: str, end: str) -> bool:
-    for b in repo.all_bookings():
-        if (b["instructor"] == instructor and b["day"] == day
-                and repo.overlaps(b["start_time"], b["end_time"], start, end)):
-            return False
-    return True
+    return repo.instructor_free(instructor, day, start, end)
 
 
 def inject_conflict(kind: str) -> dict:

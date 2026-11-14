@@ -60,18 +60,10 @@ class AvailabilityAgent(BaseAgent):
         # instructor must also be free at the requested slot (ignoring the
         # bookings that are themselves being rescheduled)
         instructor = r.get("instructor")
-        if instructor:
-            excluded = set(r.get("exclude_booking_ids", []))
-            candidates = [
-                room for room in candidates
-                if not any(
-                    b["instructor"] == instructor
-                    and b["id"] not in excluded
-                    and repo.overlaps(b["start_time"], b["end_time"],
-                                      r["start_time"], r["end_time"])
-                    for b in repo.all_bookings() if b["day"] == r["day"]
-                )
-            ]
+        if instructor and not repo.instructor_free(
+                instructor, r["day"], r["start_time"], r["end_time"],
+                set(r.get("exclude_booking_ids", []))):
+            candidates = []
         return {"candidates": candidates}
 
     async def rank_node(self, state: AvailabilityState) -> dict:
