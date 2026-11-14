@@ -87,6 +87,27 @@ button.primary[disabled]{opacity:.55;cursor:progress}
 .note .body{font-size:13px;color:var(--ink-2)}
 .note.fresh{animation:rise .28s ease-out both}
 
+/* account and personal desk */
+.authrow{display:flex;gap:10px;align-items:center;margin-bottom:24px}
+.authbox{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-2);
+  padding:16px;max-width:440px;display:none;margin-bottom:24px}
+.authbox.open{display:block}
+.authbox input{width:100%;background:var(--surface-2);color:var(--ink);
+  border:1px solid var(--line);border-radius:var(--radius-1);padding:10px 12px;
+  font:inherit;font-size:15px;margin-bottom:10px}
+.authbox .row{display:flex;gap:12px;align-items:center}
+.linklike{background:none;border:none;color:var(--ink-2);font:inherit;font-size:13px;cursor:pointer;padding:4px}
+.linklike:hover{color:var(--accent)}
+.mine{display:none;margin-bottom:8px}
+.mine.open{display:block}
+.pillrow{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.composer select{flex:1;min-width:0;background:var(--surface);color:var(--ink);
+  border:1px solid var(--line);border-radius:var(--radius-1);padding:12px;font:inherit;font-size:15px}
+.classline{display:flex;justify-content:space-between;gap:12px;padding:10px 2px;
+  border-bottom:1px solid var(--line);font-size:14px;flex-wrap:wrap}
+.classline:last-child{border-bottom:none}
+.classline .when{color:var(--ink-2);font-size:13px}
+
 /* the transcript */
 .desk{margin-top:26px}
 .desk-label{font-size:13px;color:var(--ink-2);margin-bottom:12px}
@@ -125,6 +146,20 @@ footer a{border-bottom:1px solid var(--line);text-decoration:none;padding-bottom
     <a href="/">Ops dashboard</a>
   </header>
 
+  <div class="authrow">
+    <button class="chip" id="authToggle" type="button">Sign in</button>
+    <span class="desk-label" id="whoami" style="margin:0"></span>
+  </div>
+  <div class="authbox" id="authbox">
+    <input id="authName" placeholder="Your name (registration only)" autocomplete="name" style="display:none">
+    <input id="authEmail" placeholder="Campus email" autocomplete="email">
+    <input id="authPass" type="password" placeholder="Password (8+ characters)" autocomplete="current-password">
+    <div class="row">
+      <button class="primary" id="authGo" type="button">Sign in</button>
+      <button class="linklike" id="authMode" type="button">New here? Create an account</button>
+    </div>
+  </div>
+
   <section class="hero">
     <h1>Ask the campus.</h1>
     <p>The Assistant Agent answers from live campus data: schedules, free rooms, room changes and utilization. It never edits anything, it only knows.</p>
@@ -138,6 +173,19 @@ footer a{border-bottom:1px solid var(--line);text-decoration:none;padding-bottom
       <button class="chip" type="button" data-q="Any free rooms Mon 10:00-12:00?">Free rooms Mon 10:00</button>
       <button class="chip" type="button" data-q="Any room changes?">Room changes</button>
       <button class="chip" type="button" data-q="Show me the room utilization report">Utilization report</button>
+    </div>
+  </section>
+
+  <section class="mine" id="mine">
+    <div class="desk-label">My desk</div>
+    <div class="pillrow" id="coursePills"></div>
+    <div class="composer" style="max-width:520px;margin-bottom:16px">
+      <select id="enrollSelect" aria-label="Choose a course to enrol in"></select>
+      <button class="chip" id="enrollBtn" type="button">Enrol</button>
+    </div>
+    <div class="desk-label">My classes this week</div>
+    <div class="inbox" id="classes">
+      <p class="empty">Loading your classes…</p>
     </div>
   </section>
 
@@ -258,10 +306,12 @@ function renderFeed(items) {
 }
 
 async function pollNotifications() {
-  try { renderFeed(await api("/notifications?limit=30")); } catch (e) { /* keep last view */ }
+  try {
+    const path = me ? "/auth/my/notifications?limit=30" : "/notifications?limit=30";
+    const opts = me ? {headers: authHeaders()} : undefined;
+    renderFeed(await api(path, opts));
+  } catch (e) { /* keep last view */ }
 }
-pollNotifications();
-setInterval(pollNotifications, 6000);
 
 document.getElementById("filters").addEventListener("click", e => {
   const chip = e.target.closest(".chip");
@@ -271,6 +321,125 @@ document.getElementById("filters").addEventListener("click", e => {
     .forEach(c => c.classList.toggle("is-on", c === chip));
   pollNotifications();
 });
+
+/* account: sign in, register, my desk */
+let authToken = localStorage.getItem("campus-desk-token") || "";
+let me = null;
+let authMode = "login";
+const authBox = document.getElementById("authbox");
+const authName = document.getElementById("authName");
+const authEmail = document.getElementById("authEmail");
+const authPass = document.getElementById("authPass");
+
+function authHeaders() {
+  return authToken ? {"Authorization": "Bearer " + authToken} : {};
+}
+
+function setAuthUI() {
+  const toggle = document.getElementById("authToggle");
+  const who = document.getElementById("whoami");
+  const mine = document.getElementById("mine");
+  if (me) {
+    toggle.textContent = "Sign out";
+    who.textContent = "Signed in as " + me.name;
+    authBox.classList.remove("open");
+    mine.classList.add("open");
+    renderMine();
+  } else {
+    toggle.textContent = "Sign in";
+    who.textContent = "";
+    mine.classList.remove("open");
+  }
+}
+
+function renderMine() {
+  const pills = document.getElementById("coursePills");
+  pills.innerHTML = (me.courses || []).map(c => `<span class="chip is-on">${esc(c)}</span>`).join("");
+  api("/auth/my/schedule", {headers: authHeaders()}).then(rows => {
+    document.getElementById("classes").innerHTML = rows.length ? rows.map(r =>
+      `<div class="classline"><span><b>${esc(r.course)}</b> ${esc(r.title)}</span>
+       <span class="when">${esc(r.day)} ${esc(r.start)}-${esc(r.end)} · ${esc(r.room)}${r.moved ? " · moved" : ""}</span></div>`).join("")
+      : `<p class="empty">No classes yet — enrol in a course above.</p>`;
+  }).catch(() => {});
+}
+
+async function loadMe() {
+  if (!authToken) { me = null; setAuthUI(); return; }
+  try {
+    me = await api("/auth/me", {headers: authHeaders()});
+  } catch (e) {
+    authToken = ""; localStorage.removeItem("campus-desk-token"); me = null;
+  }
+  setAuthUI();
+}
+
+document.getElementById("authToggle").addEventListener("click", () => {
+  if (me) {
+    authToken = ""; localStorage.removeItem("campus-desk-token");
+    me = null; setAuthUI(); pollNotifications();
+    return;
+  }
+  authBox.classList.toggle("open");
+  if (authBox.classList.contains("open")) authEmail.focus();
+});
+
+document.getElementById("authMode").addEventListener("click", () => {
+  authMode = authMode === "login" ? "register" : "login";
+  authName.style.display = authMode === "register" ? "block" : "none";
+  document.getElementById("authGo").textContent =
+    authMode === "register" ? "Create account" : "Sign in";
+  document.getElementById("authMode").textContent =
+    authMode === "register" ? "Already have an account? Sign in" : "New here? Create an account";
+});
+
+document.getElementById("authGo").addEventListener("click", async () => {
+  const body = {email: authEmail.value, password: authPass.value};
+  if (authMode === "register") body.name = authName.value;
+  try {
+    const r = await api("/auth/" + authMode, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    if (r.detail) { authPass.value = ""; alert(r.detail); return; }
+    authToken = r.token;
+    localStorage.setItem("campus-desk-token", authToken);
+    me = await api("/auth/me", {headers: authHeaders()});
+    authPass.value = "";
+    authBox.classList.remove("open");
+    setAuthUI();
+    pollNotifications();
+  } catch (e) {
+    alert("The campus sign-in is unreachable right now.");
+  }
+});
+
+(async function loadCourses() {
+  try {
+    const courses = await api("/courses");
+    const select = document.getElementById("enrollSelect");
+    select.innerHTML = courses.map(c =>
+      `<option value="${esc(c.code)}">${esc(c.code)} — ${esc(c.title)}</option>`).join("");
+  } catch (e) {}
+})();
+
+document.getElementById("enrollBtn").addEventListener("click", async () => {
+  if (!me) return;
+  const code = document.getElementById("enrollSelect").value;
+  try {
+    const r = await api("/auth/enroll", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", ...authHeaders()},
+      body: JSON.stringify({course_code: code})
+    });
+    me.courses = r.courses;
+    renderMine();
+    pollNotifications();
+  } catch (e) {}
+});
+
+loadMe();
+pollNotifications();
+setInterval(pollNotifications, 6000);
 </script>
 </body>
 </html>
