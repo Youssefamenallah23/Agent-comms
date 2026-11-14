@@ -1,34 +1,134 @@
 # Agent-comms — Smart Campus Multi-Agent System
 
+![CI](https://github.com/Youssefamenallah23/Agent-comms/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Tests](https://img.shields.io/badge/tests-9%2F9-brightgreen)
+
 Autonomous agents that monitor a university timetable, detect conflicts,
 negotiate reallocation of rooms and resources, notify affected people and
-report on campus utilization.
+report on campus utilization — **100% free stack: Python + LangGraph + SQLite
++ FastAPI + free LLM tiers.**
 
-## Vision
+## ✨ What it demonstrates
 
-Instead of one monolithic scheduling app, the campus runs a **society of
-cooperating agents**:
+- **Multi-agent communication** — every agent-to-agent exchange goes through a
+  logged message bus (request/response protocol stored in SQLite, visible live
+  on the dashboard).
+- **Negotiation** — the Coordinator runs a real multi-round loop: gather
+  candidates → propose → evaluate → decide → *relax constraints and retry*
+  (drop building preference → allow time shifts) → notify.
+- **Autonomous decision-making with guardrails** — weighted scoring is
+  deterministic and explainable; the LLM only *reasons* about pre-scored
+  options and can never invent an invalid move. Instructor availability is
+  validated both when gathering candidates and again before applying a move.
+- **Human-in-the-loop** — proposals below the auto-apply threshold (or involving
+  exams) wait for a human Approve/Reject on the dashboard.
+- **Self-adaptation** — the system keeps scanning in the background and
+  self-heals new conflicts as they appear (injected or real, e.g. a room going
+  offline for maintenance).
 
-| Agent | Role |
-|---|---|
-| **Schedule Agent** | scans the timetable, detects conflicts (double booking, instructor clash, capacity overflow, equipment mismatch, room unavailable) |
-| **Availability Agent** | finds and ranks free rooms for a request |
-| **Coordinator Agent** | negotiates multi-round reallocations and applies the best one |
-| **Notification Agent** | informs students, instructors and admins |
-| **Assistant Agent** | answers student questions (free rooms, schedules, changes) |
-| **Analytics Agent** | reports utilization and recommends optimizations |
+## 🤖 The agents
 
-Agents talk through a **logged message bus**, keep a **shared SQLite
-blackboard**, and are orchestrated with **LangGraph** state machines.
+| Agent | LangGraph pipeline | Responsibility |
+|---|---|---|
+| **Schedule** | `scan → detect → analyze → publish` | Detects 5 conflict types: double booking, instructor clash, capacity overflow, equipment mismatch, room unavailable |
+| **Availability** | `parse → query → rank` | Finds free rooms matching hard constraints (capacity, equipment, instructor free) and ranks them |
+| **Coordinator** | `intake → gather ⇄ propose → evaluate → decide → notify` | Negotiates, applies policy (exam > core > lab > elective > event), auto-applies ≥ threshold, escalates otherwise |
+| **Notifications** | service agent | Queues and delivers alerts to students / instructors / admins |
+| **Assistant** | chat | Student Q&A: free rooms, course schedule, room changes, utilization |
+| **Analytics** | report | Room utilization, conflict stats, optimization recommendations |
 
-## Stack (100% free)
+## 🧩 Architecture
 
-- Python + LangGraph (agent orchestration)
-- FastAPI (API + dashboard backend)
-- SQLite (shared memory / blackboard)
-- Free LLM tiers with automatic fallback: Gemini → Groq → OpenRouter
-  (the system also runs fully rule-based with zero API keys)
+```
+                       ┌──────────────────────────────────────────────┐
+                       │             FastAPI (REST + dashboard)       │
+                       └───────┬───────────────┬──────────────┬───────┘
+                               │               │              │
+                        ScheduleAgent   CoordinatorAgent   AssistantAgent
+                        (LangGraph)     (LangGraph)        (LLM/rule)
+                          │   ▲               │
+                          │   │  message bus  │  (logged request/response)
+                          ▼   │               ▼
+                       conflicts        AvailabilityAgent ──► ranked candidates
+                          │                                     │
+                          ▼                                     ▼
+                  NotificationAgent ◄──── decision ──── scoring (0..1, explainable)
+                          │
+                          ▼
+                  ┌─────────────── SQLite blackboard ───────────────┐
+                  │ rooms · courses · bookings · conflicts ·        │
+                  │ proposals · messages · notifications · events   │
+                  └─────────────────────────────────────────────────┘
+```
 
-## Status
+## 🚀 Quickstart
 
-🚧 Under active development — see the commit history for the step-by-step build.
+```bash
+pip install -r requirements.txt
+copy .env.example .env        # optional: add free API keys
+python run.py                 # start server + dashboard on http://127.0.0.1:8000
+python demo.py                # narrative CLI demo (no server needed)
+pytest                        # run the test suite (9 tests)
+```
+
+The system works **with zero API keys** (rule-based fallback mode). To enable
+LLM reasoning, put one of these free keys in `.env`:
+
+| Provider | Free tier | Key URL |
+|---|---|---|
+| Google Gemini (recommended) | generous per-day free tier, no card | https://aistudio.google.com/apikey |
+| Groq | 30 req/min · 1,000 req/day · 200K tok/day | https://console.groq.com/keys |
+| OpenRouter | 50 req/day (`:free` models) | https://openrouter.ai/keys |
+
+The provider chain tries them in order (`LLM_PROVIDER_ORDER=gemini,groq,openrouter`),
+falls back automatically on rate limits, caches identical prompts, and every
+LLM feature has a rule-based fallback.
+
+## 🎮 Demo script (the one to show)
+
+1. Open the dashboard → the seeded campus has **one live conflict**: CS101 and
+   MA201 are both booked in Auditorium-A on Wed 10:00–12:00.
+2. Click **▶ Run Scan & Auto-Resolve** — watch the negotiation trace:
+   Schedule detects the conflict → Coordinator asks Availability for candidates
+   → proposals are scored → MA201 moves to C-105 (score 0.925) → notifications
+   go out to students and the instructor.
+3. Use **⚡ Inject conflict** (double booking / capacity overflow / equipment
+   mismatch) to create new chaos and watch the agents self-heal it.
+4. Low-score proposals land in **Awaiting approval** — use ✔/✖ to decide as
+   the human operator.
+5. `POST /api/rooms/{id}/maintenance` takes a room offline — watch the agents
+   evacuate its bookings automatically.
+
+## 🔌 API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/state` | Everything the dashboard shows |
+| GET | `/api/agents/status` | Per-agent heartbeat: events + bus traffic |
+| POST | `/api/pipeline/scan-and-resolve` | One-click detect + negotiate + apply |
+| POST | `/api/simulate/seed` · `/api/simulate/inject` | Demo data & chaos monkey |
+| POST | `/api/rooms/{id}/maintenance` | Take a room offline / bring it back |
+| POST | `/api/agents/schedule/scan` | Schedule Agent graph run |
+| POST | `/api/agents/availability/query` | Availability Agent graph run |
+| POST | `/api/agents/coordinator/handle/{id}` | Negotiate one conflict |
+| POST | `/api/proposals/{id}/approve` · `/reject` | Human-in-the-loop |
+| POST | `/api/agents/assistant/chat` | Student chatbot |
+| GET | `/api/agents/analytics/report` | Utilization & recommendations |
+| GET | `/api/conflicts/{id}` · `/api/messages` | Full audit trail |
+
+## ⚙️ Policy knobs (`.env`)
+
+- `AUTO_APPLY_THRESHOLD=0.75` — score needed to apply without a human
+- `MAX_NEGOTIATION_ROUNDS=3` — negotiation retries with relaxed constraints
+- `SCAN_INTERVAL_SEC=60` — background monitoring cadence
+- `AGENT_TRANSPORT=inline|http` — in-process handlers or real REST A2A calls
+
+## 🗺 Roadmap ideas
+
+- WebSocket live trace instead of polling
+- Preference learning (instructor room/time preferences)
+- Exam timetabling solver (constraint programming alongside agents)
+- Multi-campus federation with a second Coordinator tier
+- Email/Telegram notification channels
