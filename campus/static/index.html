@@ -63,6 +63,7 @@
     <div class="sub">Schedule · Availability · Coordinator · Notifications · Assistant · Analytics</div>
   </div>
   <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+    <span class="pill" id="wsState">trace: connecting…</span>
     <div class="pills" id="pills"></div>
     <a class="pill" href="/student" style="text-decoration:none">Open the Student Desk: chat with the Assistant Agent and read notifications</a>
   </div>
@@ -152,11 +153,8 @@ function render(s){
      <td><div class="small">${r.utilization}% <span class="muted">(${r.booked_hours}h)</span></div>
      <div class="bar-ext"><i style="width:${Math.min(100,r.utilization)}%"></i></div></td></tr>`).join("");
 
-  document.getElementById("trace").innerHTML = s.messages.length ? s.messages.map(m =>
-    `<div class="msg ${esc(m.role)}"><span class="who">${esc(m.from_agent)} → ${esc(m.to_agent)}</span>
-     <span class="muted small"> [${esc(m.role)}] ${esc(m.topic)}</span>
-     <div class="body">${esc(JSON.stringify(m.content).slice(0,240))}</div></div>`).join("")
-    : `<div class="empty">No agent messages yet — run the pipeline.</div>`;
+  let traceMessages = s.messages || [];
+  paintTrace();
 
   document.getElementById("notifications").innerHTML = s.notifications.length ? s.notifications.map(n =>
     `<div class="msg note"><span class="who">${esc(n.audience)}</span> <span class="tag ${esc(n.status)}">${esc(n.status)}</span>
@@ -168,6 +166,34 @@ function render(s){
      <div class="body">${esc(m.day)} ${esc(m.start)}-${esc(m.end)}: ${esc(m.from||"?")} → <b>${esc(m.to)}</b></div></div>`).join("")
     : `<div class="empty">No relocations yet.</div>`;
 }
+
+function paintTrace(){
+  document.getElementById("trace").innerHTML = traceMessages.length ? traceMessages.map(m =>
+    `<div class="msg ${esc(m.role)}"><span class="who">${esc(m.from_agent)} → ${esc(m.to_agent)}</span>
+     <span class="muted small"> [${esc(m.role)}] ${esc(m.topic)}</span>
+     <div class="body">${esc(JSON.stringify(m.content).slice(0,240))}</div></div>`).join("")
+    : `<div class="empty">No agent messages yet — run the pipeline.</div>`;
+}
+
+let traceWS = null;
+function connectTrace(){
+  try{
+    traceWS = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/trace");
+    traceWS.onopen = () => { const el = document.getElementById("wsState"); el.textContent = "trace: live"; el.className = "pill ok"; };
+    traceWS.onclose = () => { const el = document.getElementById("wsState"); el.textContent = "trace: polling"; el.className = "pill"; setTimeout(connectTrace, 3000); };
+    traceWS.onerror = () => { try { traceWS.close(); } catch(e) {} };
+    traceWS.onmessage = ev => {
+      try{
+        const m = JSON.parse(ev.data);
+        if (m.type === "hello") return;
+        traceMessages.push(m);
+        if (traceMessages.length > 40) traceMessages.shift();
+        paintTrace();
+      }catch(e){}
+    };
+  }catch(e){ document.getElementById("wsState").textContent = "trace: polling"; }
+}
+connectTrace();
 
 async function refresh(){
   try{ render(await api("/state")); }catch(e){ console.error(e); }

@@ -175,6 +175,21 @@ def test_agent_status_reports_activity_heartbeat():
     assert "enabled" in data["llm"]
 
 
+def test_websocket_trace_streams_live_bus_messages():
+    client = TestClient(app)
+    with client.websocket_connect("/ws/trace") as ws:
+        hello = ws.receive_json()
+        assert hello["type"] == "hello"
+        for _ in range(hello["history"]):
+            ws.receive_json()
+        repo.insert_message("ws-test-cid", "schedule", "coordinator",
+                            "request", "test.ping", {"hello": "world"})
+        live = ws.receive_json()
+        assert live["topic"] == "test.ping"
+        assert live["content"] == {"hello": "world"}
+        assert live["from_agent"] == "schedule"
+
+
 def test_assistant_teacher_and_room_details_intents():
     answer = asyncio.run(get_agent("assistant").chat("intent-test", "who teaches CS101?"))
     assert answer["intent"] == "course_teacher"
