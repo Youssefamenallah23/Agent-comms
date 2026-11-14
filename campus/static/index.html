@@ -95,7 +95,7 @@
 </div>
 <script>
 const api = (path, opts) => fetch("/api" + path, opts).then(r => r.json());
-const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&","<":"<",">":">",'"':""","'":"&#39;"}[c]));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => "&#".concat(c.charCodeAt(0), ";"));
 const busy = (on, label) => document.getElementById("busy").textContent = on ? ("⏳ " + (label||"working…")) : "";
 
 async function runPipeline(){
