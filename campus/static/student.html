@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Student Desk — Smart Campus</title>
+<style>
+/* hallmark stamp · page: student-desk · genre: app · theme: campus-night · shape: single desk (inbox arrives next) · hero: headline + sentence + composer · nav: quiet header link · footer: quiet · imagery: none · type: one system family · motion: micro-rise · tokens: :root local · date: 2026-11-14 */
+/* critique: floor 0 fail · reflex waived: imagery — a live-data tool page; photographs would be invented decoration */
+/* finish answered: gold-on-ink kept AA, focus rings instant, empty and error states honest */
+:root{
+  --bg:#0c111e;
+  --surface:#131a2b;
+  --surface-2:#1a2338;
+  --line:#263250;
+  --ink:#eef1fb;
+  --ink-2:#9aa5c6;
+  --accent:#e8b64c;
+  --accent-ink:#241a05;
+  --accent-soft:rgba(232,182,76,.13);
+  --bubble-user:#1f3a5f;
+  --ok:#58c79a;
+  --shadow-1:0 1px 2px rgba(3,6,14,.5);
+  --shadow-2:0 14px 34px rgba(3,6,14,.45);
+  --radius-1:10px;
+  --radius-2:16px;
+  --measure:1080px;
+  --font-body:"Segoe UI",system-ui,-apple-system,sans-serif;
+}
+html,body{overflow-x:clip}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:var(--font-body);font-size:16px;line-height:1.55;
+  padding:28px 20px 40px;
+}
+.wrap{max-width:var(--measure);margin-inline:auto}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+a{color:var(--ink-2)}
+a:hover{color:var(--ink)}
+
+/* masthead */
+.masthead{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-bottom:34px}
+.wordmark{font-weight:700;font-size:17px;letter-spacing:.01em}
+.masthead a{font-size:13px;text-decoration:none;border-bottom:1px solid var(--line);padding-bottom:2px}
+
+/* hero: headline, one sentence, and the primary action all above the fold */
+.hero{margin-bottom:30px}
+h1{font-size:clamp(30px,4.4vw,42px);font-weight:700;line-height:1.12;margin-bottom:10px}
+.hero p{color:var(--ink-2);max-width:56ch;margin-bottom:20px}
+.composer{display:flex;gap:10px;max-width:620px}
+.composer input{
+  flex:1;min-width:0;background:var(--surface);color:var(--ink);
+  border:1px solid var(--line);border-radius:var(--radius-1);
+  padding:13px 16px;font:inherit;font-size:16px;box-shadow:var(--shadow-1);
+}
+.composer input::placeholder{color:var(--ink-2)}
+.composer input:focus-visible{outline-offset:0;border-color:var(--accent)}
+button.primary{
+  background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);
+  border-radius:var(--radius-1);padding:13px 22px;font:inherit;font-weight:650;
+  cursor:pointer;box-shadow:var(--shadow-1);
+}
+button.primary:hover{filter:brightness(1.06)}
+button.primary[disabled]{opacity:.55;cursor:progress}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.chip{
+  background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);
+  border-radius:999px;padding:7px 14px;font:inherit;font-size:13px;cursor:pointer;
+}
+.chip:hover{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+
+/* the transcript */
+.desk{margin-top:26px}
+.desk-label{font-size:13px;color:var(--ink-2);margin-bottom:12px}
+.log{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-2);
+  box-shadow:var(--shadow-2);padding:20px;min-height:300px;max-height:56vh;
+  overflow-y:auto;display:flex;flex-direction:column;gap:14px;
+}
+.turn{display:flex;flex-direction:column;gap:3px;max-width:78%}
+.turn.user{align-self:flex-end;align-items:flex-end}
+.turn .who{font-size:12px;color:var(--ink-2)}
+.turn .bubble{
+  background:var(--surface-2);border:1px solid var(--line);
+  border-radius:var(--radius-1);padding:10px 14px;white-space:pre-wrap;word-break:break-word;
+}
+.turn.user .bubble{background:var(--bubble-user);border-color:transparent}
+.turn .tag{font-size:12px;color:var(--ink-2)}
+.turn .tag b{color:var(--accent);font-weight:600}
+.turn.fresh{animation:rise .28s ease-out both}
+.pending{align-self:flex-start;font-size:13px;color:var(--ink-2)}
+.empty{color:var(--ink-2);font-size:14px;max-width:44ch}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .turn.fresh{animation:none}
+  *{transition:none!important}
+}
+
+footer{margin-top:30px;font-size:13px;color:var(--ink-2)}
+footer a{border-bottom:1px solid var(--line);text-decoration:none;padding-bottom:1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <span class="wordmark">Student Desk</span>
+    <a href="/">Ops dashboard</a>
+  </header>
+
+  <section class="hero">
+    <h1>Ask the campus.</h1>
+    <p>The Assistant Agent answers from live campus data: schedules, free rooms, room changes and utilization. It never edits anything, it only knows.</p>
+    <form class="composer" id="composer">
+      <input id="say" autocomplete="off" aria-label="Ask the campus a question"
+             placeholder="Try: when is CS101? or: free rooms Wed 10:00">
+      <button class="primary" id="send" type="submit">Send</button>
+    </form>
+    <div class="chips" id="chips">
+      <button class="chip" type="button" data-q="Where is CS101?">Where is CS101?</button>
+      <button class="chip" type="button" data-q="Any free rooms Mon 10:00-12:00?">Free rooms Mon 10:00</button>
+      <button class="chip" type="button" data-q="Any room changes?">Room changes</button>
+      <button class="chip" type="button" data-q="Show me the room utilization report">Utilization report</button>
+    </div>
+  </section>
+
+  <section class="desk">
+    <div class="desk-label">Conversation with the Assistant Agent</div>
+    <div class="log" id="log" aria-live="polite">
+      <p class="empty" id="empty">Ask anything below, or tap a suggestion. Your conversation is kept for this browser.</p>
+    </div>
+  </section>
+
+  <footer>
+    Part of the Smart Campus multi-agent system. Answers come from live SQLite data; the agents negotiate schedule changes on the <a href="/">ops dashboard</a>.
+  </footer>
+</div>
+
+<script>
+const api = (path, opts) => fetch("/api" + path, opts).then(r => r.json());
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => "&#".concat(c.charCodeAt(0), ";"));
+const log = document.getElementById("log");
+const empty = document.getElementById("empty");
+const say = document.getElementById("say");
+const send = document.getElementById("send");
+
+let sid = localStorage.getItem("campus-desk-session");
+if (!sid) { sid = crypto.randomUUID(); localStorage.setItem("campus-desk-session", sid); }
+
+function turn(role, text, intent, fresh) {
+  empty.style.display = "none";
+  const el = document.createElement("div");
+  el.className = "turn " + role + (fresh ? " fresh" : "");
+  const who = role === "user" ? "You" : "Assistant Agent";
+  const stamp = new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+  const tag = role === "agent" && intent
+    ? `<span class="tag">answered via <b>${esc(intent)}</b></span>` : "";
+  el.innerHTML = `<span class="who">${who} · ${stamp}</span>
+    <div class="bubble">${esc(text)}</div>${tag}`;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+
+async function ask(question) {
+  if (!question.trim() || send.disabled) return;
+  turn("user", question, null, true);
+  say.value = "";
+  send.disabled = true;
+  const pending = document.createElement("p");
+  pending.className = "pending";
+  pending.textContent = "Assistant Agent is checking the campus data…";
+  log.appendChild(pending);
+  log.scrollTop = log.scrollHeight;
+  try {
+    const r = await api("/agents/assistant/chat", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_id: sid, message: question})
+    });
+    pending.remove();
+    turn("agent", r.reply || "I could not read the campus data just now.", r.intent, true);
+  } catch (e) {
+    pending.remove();
+    turn("agent", "The campus agent is unreachable right now. Try again in a moment.", null, true);
+  } finally {
+    send.disabled = false;
+    say.focus();
+  }
+}
+
+document.getElementById("composer").addEventListener("submit", e => {
+  e.preventDefault(); ask(say.value);
+});
+document.getElementById("chips").addEventListener("click", e => {
+  const chip = e.target.closest(".chip");
+  if (chip) ask(chip.dataset.q);
+});
+
+(async function restore() {
+  try {
+    const history = await api(`/agents/assistant/history?session_id=${encodeURIComponent(sid)}`);
+    history.forEach(h => turn(h.role === "user" ? "user" : "agent", h.content, null, false));
+  } catch (e) { /* first visit: nothing to restore */ }
+})();
+</script>
+</body>
+</html>

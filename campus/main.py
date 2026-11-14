@@ -61,6 +61,12 @@ async def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
+@app.get("/student")
+async def student_portal():
+    """The Student Desk: chat with the Assistant Agent and read notifications."""
+    return FileResponse(os.path.join(STATIC_DIR, "student.html"))
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
