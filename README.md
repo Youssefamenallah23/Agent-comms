@@ -133,9 +133,27 @@ LLM feature has a rule-based fallback.
   building; future negotiations prefer buildings the instructor was moved into
   before (a tiny preference memory, grown from its own decisions).
 - **Self-monitoring** — every mutation triggers a fresh conflict scan, so the
-  campus re-checks itself after each change.
+  campus re-checks itself after each change. Stale conflicts (the underlying
+  problem disappeared on its own) close themselves.
 - **Concurrency-safe storage** — SQLite busy-timeout plus bounded retries; the
   LLM cache is bounded so long sessions stay predictable.
+
+## 🚀 What's new in v1.2
+
+- **Live negotiation trace over WebSocket** (`/ws/trace`) — the ops dashboard
+  streams every agent-to-agent message the instant it happens, with automatic
+  fallback to polling and a `trace: live` indicator.
+- **Batch negotiation** — when one event displaces several classes (e.g. a room
+  going offline), the Coordinator negotiates all of them in **one round**: a
+  global gather, a greedy conflict-free allocation (no room claimed twice),
+  guardrailed application and one summary notification.
+- **Student accounts** — `POST /api/auth/register` / `login` (PBKDF2-hashed
+  passwords, stdlib only), token sessions, course enrolment,
+  `GET /api/auth/my/schedule` and a **notifications inbox scoped to the courses
+  you are enrolled in**.
+- **A personalised Student Desk** — sign in (demo account: `demo@campus.edu`
+  / `demo1234`), see *my classes this week*, enrol in courses, and receive only
+  the alerts that concern you.
 
 ## 🎓 Student Desk (`/student`)
 
