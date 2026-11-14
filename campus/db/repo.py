@@ -337,12 +337,36 @@ def update_proposal_reasoning(proposal_id: int, reasoning: str) -> None:
 
 
 # ---------------------------------------------------------------- messages (A2A bus trace)
+_message_listeners: list = []
+
+
+def subscribe_messages(callback) -> None:
+    """Register a listener fired on every bus message (used by the live trace)."""
+    _message_listeners.append(callback)
+
+
+def unsubscribe_messages(callback) -> None:
+    while callback in _message_listeners:
+        _message_listeners.remove(callback)
+
+
 def insert_message(correlation_id, from_agent, to_agent, role, topic, content: dict) -> None:
-    execute(
+    stamp = now_iso()
+    message_id = execute(
         "INSERT INTO messages (correlation_id, from_agent, to_agent, role, topic, content, created_at)"
         " VALUES (?,?,?,?,?,?,?)",
-        (correlation_id, from_agent, to_agent, role, topic, json.dumps(content, default=str), now_iso()),
+        (correlation_id, from_agent, to_agent, role, topic, json.dumps(content, default=str), stamp),
     )
+    message = {
+        "id": message_id, "correlation_id": correlation_id,
+        "from_agent": from_agent, "to_agent": to_agent,
+        "role": role, "topic": topic, "content": content, "created_at": stamp,
+    }
+    for listener in list(_message_listeners):
+        try:
+            listener(message)
+        except Exception:
+            pass  # a broken listener must never break the bus
 
 
 def recent_messages(limit: int = 50) -> list[dict]:
