@@ -129,3 +129,45 @@ def test_full_pipeline_via_api():
         assert state["stats"]["conflicts_resolved"] >= 1
         report = client.get("/api/agents/analytics/report").json()
         assert "rooms" in report and "summary" in report
+
+
+def test_maintenance_triggers_room_unavailable_and_self_heals():
+    """Take Lab-CS-2 offline for maintenance. Its bookings must be flagged as
+    room_unavailable conflicts and the agents must relocate them."""
+    room = repo.query_one("SELECT * FROM rooms WHERE name = 'Lab-CS-2'")
+    client = TestClient(app)
+    response = client.post(f"/api/rooms/{room['id']}/maintenance",
+                           json={"status": "maintenance"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "maintenance"
+
+    summary = asyncio.run(get_agent("schedule").run_scan())
+    unavailable = [c for c in summary["conflicts"] if c["type"] == "room_unavailable"]
+    assert unavailable, "maintenance must produce room_unavailable conflicts"
+
+    # handle the Wednesday CS340 session: it must move to the other computer lab
+    wednesday = next(b for b in repo.all_bookings()
+                     if b["code"] == "CS340" and b["day"] == "Wed"
+                     and b["room_name"] == "Lab-CS-2")
+    conflict = next(c for c in unavailable if c["booking_a_id"] == wednesday["id"])
+    result = asyncio.run(get_agent("coordinator").handle_conflict(conflict["id"]))
+    assert result["decision"] == "auto_applied"
+    moved = repo.get_booking_full(wednesday["id"])
+    assert moved["room_name"] == "Lab-CS-1"
+    assert moved["moved_from_name"] == "Lab-CS-2"
+
+    # bring the room back online for subsequent state
+    client.post(f"/api/rooms/{room['id']}/maintenance", json={"status": "active"})
+
+
+def test_agent_status_reports_activity_heartbeat():
+    client = TestClient(app)
+    data = client.get("/api/agents/status").json()
+    names = {a["name"] for a in data["agents"]}
+    assert names == {"schedule", "availability", "coordinator",
+                     "notifications", "assistant", "analytics"}
+    coordinator = next(a for a in data["agents"] if a["name"] == "coordinator")
+    assert coordinator["role"]
+    assert coordinator["messages_sent"] >= 2, "coordinator must have used the bus"
+    assert coordinator["events"] >= 2, "coordinator must have logged events"
+    assert "enabled" in data["llm"]
