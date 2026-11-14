@@ -384,6 +384,15 @@ def insert_assistant_chat(session_id, role, content) -> None:
     )
 
 
+def assistant_history(session_id: str, limit: int = 50) -> list[dict]:
+    rows = query(
+        "SELECT role, content, created_at FROM assistant_chats"
+        " WHERE session_id = ? ORDER BY id DESC LIMIT ?",
+        (session_id, limit),
+    )
+    return list(reversed(rows))
+
+
 def conflict_stats() -> dict:
     by_status = {r["status"]: r["c"] for r in query(
         "SELECT status, COUNT(*) c FROM conflicts GROUP BY status")}

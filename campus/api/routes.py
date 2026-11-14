@@ -119,6 +119,18 @@ async def assistant_chat(request: ChatRequest):
     return await runtime.get_agent("assistant").chat(request.session_id, request.message)
 
 
+@router.get("/agents/assistant/history")
+async def assistant_history(session_id: str = "web", limit: int = 50):
+    """Restore a previous conversation so the Student Desk survives a reload."""
+    return repo.assistant_history(session_id, limit)
+
+
+@router.get("/notifications")
+async def notifications_feed(limit: int = 30):
+    """Public notifications feed for the Student Desk portal."""
+    return repo.recent_notifications(limit)
+
+
 @router.get("/agents/analytics/report")
 async def analytics_report():
     return await runtime.get_agent("analytics").report()
