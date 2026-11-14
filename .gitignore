@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Environment & secrets
+.env
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Test / tooling caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
