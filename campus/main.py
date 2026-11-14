@@ -4,7 +4,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -65,6 +65,32 @@ async def index():
 async def student_portal():
     """The Student Desk: chat with the Assistant Agent and read notifications."""
     return FileResponse(os.path.join(STATIC_DIR, "student.html"))
+
+
+@app.websocket("/ws/trace")
+async def ws_trace(websocket: WebSocket):
+    """Live agent-to-agent message stream: a hello frame with history size,
+    then the recent messages, then every new bus message as it happens."""
+    await websocket.accept()
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+
+    def on_message(message: dict) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, message)
+
+    repo.subscribe_messages(on_message)
+    try:
+        history = list(reversed(repo.recent_messages(20)))
+        await websocket.send_json({"type": "hello", "history": len(history)})
+        for message in history:
+            await websocket.send_json(message)
+        while True:
+            message = await queue.get()
+            await websocket.send_json(message)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        repo.unsubscribe_messages(on_message)
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
