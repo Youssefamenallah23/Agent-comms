@@ -58,8 +58,52 @@ def _mk(kind, a, b=None, missing=None) -> dict:
     }
 
 
+def _signature_holds(conflict: dict, bookings_by_id: dict) -> bool:
+    """True when the conflict's underlying condition still exists right now."""
+    kind = conflict["type"]
+    a = bookings_by_id.get(conflict["booking_a_id"])
+    b = bookings_by_id.get(conflict["booking_b_id"]) if conflict["booking_b_id"] else None
+    if not a:
+        return False
+    if kind == "double_booking":
+        if not b:
+            return False
+        return (a["room_id"] == b["room_id"] and a["day"] == b["day"]
+                and repo.overlaps(a["start_time"], a["end_time"], b["start_time"], b["end_time"]))
+    if kind == "instructor_clash":
+        if not b:
+            return False
+        return (a["instructor"] == b["instructor"] and a["day"] == b["day"]
+                and a["room_id"] != b["room_id"]
+                and repo.overlaps(a["start_time"], a["end_time"], b["start_time"], b["end_time"]))
+    if kind == "capacity_overflow":
+        return a["enrolled"] > a["capacity"]
+    if kind == "equipment_mismatch":
+        missing = [e for e in (a["required_equipment"] or []) if e not in (a["equipment"] or [])]
+        return bool(missing)
+    if kind == "room_unavailable":
+        return a["room_status"] == "maintenance"
+    return True
+
+
+def _close_stale_conflicts() -> int:
+    """Self-healing: an open conflict whose condition vanished (room back from
+    maintenance, overlapping class cancelled...) closes itself."""
+    bookings_by_id = {b["id"]: b for b in repo.all_bookings()}
+    closed = 0
+    for conflict in repo.open_conflicts():
+        if not _signature_holds(conflict, bookings_by_id):
+            repo.set_conflict_status(conflict["id"], "resolved")
+            repo.insert_event("schedule", "conflict_self_resolved", {
+                "conflict_id": conflict["id"], "type": conflict["type"],
+                "reason": "underlying condition no longer holds"})
+            closed += 1
+    return closed
+
+
 def detect_all() -> list[dict]:
     """Scan all confirmed bookings, persist NEW conflicts (deduped) and return them."""
+    _close_stale_conflicts()
     bookings = repo.all_bookings()
     found: list[dict] = []
 
