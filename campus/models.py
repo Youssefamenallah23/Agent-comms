@@ -45,3 +45,18 @@ class RoomRequest(BaseModel):
     day: str
     start_time: str
     end_time: str
+
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class EnrollRequest(BaseModel):
+    course_code: str

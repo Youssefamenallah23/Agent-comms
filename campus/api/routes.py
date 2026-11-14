@@ -4,12 +4,14 @@ import csv
 import io
 import json
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
 from .. import repo, runtime
+from .. import auth as campus_auth
 from ..config import settings
-from ..models import (AvailabilityQuery, BookingRequest, ChatRequest, InjectRequest,
-                      RoomRequest, RoomStatusRequest, SeedRequest)
+from ..models import (AvailabilityQuery, BookingRequest, ChatRequest, EnrollRequest,
+                      InjectRequest, LoginRequest, RegisterRequest, RoomRequest,
+                      RoomStatusRequest, SeedRequest)
 from ..services import pipeline
 from ..simulation import seed
 
@@ -284,6 +286,82 @@ async def assistant_history(session_id: str = "web", limit: int = 50):
 async def notifications_feed(limit: int = 30):
     """Public notifications feed for the Student Desk portal."""
     return repo.recent_notifications(limit)
+
+
+# ------------------------------------------------------------------ student accounts
+def _clean(student) -> dict:
+    return {"id": student["id"], "name": student["name"], "email": student["email"]}
+
+
+def _current_student(authorization: str = Header(default="")):
+    token = authorization.replace("Bearer", "").strip()
+    student = repo.student_for_token(token) if token else None
+    if not student:
+        raise HTTPException(status_code=401, detail="sign in required")
+    return student
+
+
+@router.post("/auth/register", status_code=201)
+def register(request: RegisterRequest):
+    email = request.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=422, detail="invalid email")
+    if len(request.password) < 8:
+        raise HTTPException(status_code=422, detail="password must be at least 8 characters")
+    if repo.get_student_by_email(email):
+        raise HTTPException(status_code=409, detail="email already registered")
+    student_id = repo.create_student(request.name.strip(), email,
+                                     campus_auth.hash_password(request.password))
+    token = campus_auth.new_token()
+    repo.create_auth_token(student_id, token)
+    return {"token": token, "student": _clean(repo.get_student(student_id))}
+
+
+@router.post("/auth/login")
+def login(request: LoginRequest):
+    student = repo.get_student_by_email(request.email.strip().lower())
+    if not student or not campus_auth.verify_password(request.password,
+                                                      student["password_hash"]):
+        raise HTTPException(status_code=401, detail="invalid email or password")
+    token = campus_auth.new_token()
+    repo.create_auth_token(student["id"], token)
+    return {"token": token, "student": _clean(student)}
+
+
+@router.get("/auth/me")
+def me(student=Depends(_current_student)):
+    return {**_clean(student), "courses": repo.my_courses(student["id"])}
+
+
+@router.post("/auth/enroll")
+def enroll(request: EnrollRequest, student=Depends(_current_student)):
+    course = repo.get_course_by_code(request.course_code.strip().upper())
+    if not course:
+        raise HTTPException(status_code=404, detail=f"unknown course {request.course_code}")
+    repo.enroll(student["id"], course["code"])
+    return {"enrolled": course["code"], "courses": repo.my_courses(student["id"])}
+
+
+@router.get("/auth/my/notifications")
+def my_notifications(student=Depends(_current_student)):
+    return repo.my_notifications(student["id"])
+
+
+@router.get("/auth/my/schedule")
+def my_schedule(student=Depends(_current_student)):
+    codes = set(repo.my_courses(student["id"]))
+    day_order = {"Mon": 1, "Tue": 2, "Wed": 3, "Thu": 4, "Fri": 5}
+    bookings = [b for b in repo.all_bookings() if b["code"] in codes]
+    bookings.sort(key=lambda b: (day_order.get(b["day"], 9), b["start_time"]))
+    return [{"course": b["code"], "title": b["title"], "instructor": b["instructor"],
+             "day": b["day"], "start": b["start_time"], "end": b["end_time"],
+             "room": b["room_name"], "building": b["building"],
+             "moved": b["status"] == "moved"} for b in bookings]
+
+
+@router.get("/courses")
+def list_courses():
+    return repo.all_courses()
 
 
 @router.get("/agents/analytics/report")
