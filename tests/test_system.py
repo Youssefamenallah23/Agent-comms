@@ -162,6 +162,47 @@ def test_maintenance_triggers_room_unavailable_and_self_heals():
     client.post(f"/api/rooms/{room['id']}/maintenance", json={"status": "active"})
 
 
+def test_stale_conflicts_self_resolve_when_conditions_vanish():
+    """The maintenance test above left two Lab-CS-2 conflicts open, but the
+    room is active again: the next scan must close them on its own."""
+    stale = [c for c in repo.open_conflicts() if c["type"] == "room_unavailable"]
+    assert stale, "the maintenance test must leave stale conflicts behind"
+    asyncio.run(get_agent("schedule").run_scan())
+    for conflict in stale:
+        assert repo.get_conflict(conflict["id"])["status"] == "resolved"
+    assert not [c for c in repo.open_conflicts() if c["type"] == "room_unavailable"]
+
+
+def test_batch_negotiation_settles_multiple_conflicts_at_once():
+    """Put B-202 (4 seeded bookings) under maintenance: the Coordinator must
+    negotiate ALL FOUR jointly - HIST105 goes to B-201, ART120 and the two
+    MATH490 sessions go to Seminar-Hall, each slot claimed exactly once."""
+    room = repo.query_one("SELECT * FROM rooms WHERE name = 'B-202'")
+    b202_booking_ids = {b["id"] for b in repo.all_bookings() if b["room_name"] == "B-202"}
+    assert len(b202_booking_ids) == 5
+    client = TestClient(app)
+    client.post(f"/api/rooms/{room['id']}/maintenance", json={"status": "maintenance"})
+
+    asyncio.run(get_agent("schedule").run_scan())
+    conflicts = [c for c in repo.open_conflicts()
+                 if c["type"] == "room_unavailable" and c["booking_a_id"] in b202_booking_ids]
+    assert len(conflicts) == 5
+
+    result = asyncio.run(get_agent("coordinator").handle_conflicts_batch(
+        [c["id"] for c in conflicts]))
+
+    assert len(result["applied"]) == 5
+    assert result["unresolved"] == []
+    by_course = {a["course"]: a["room"] for a in result["applied"]}
+    assert by_course["HIST105"] == "B-201"
+    assert by_course["ART120"] == "Seminar-Hall"
+    assert sum(1 for a in result["applied"] if a["room"] == "Seminar-Hall") == 4
+    for conflict in conflicts:
+        assert repo.get_conflict(conflict["id"])["status"] == "resolved"
+
+    client.post(f"/api/rooms/{room['id']}/maintenance", json={"status": "active"})
+
+
 def test_agent_status_reports_activity_heartbeat():
     client = TestClient(app)
     data = client.get("/api/agents/status").json()

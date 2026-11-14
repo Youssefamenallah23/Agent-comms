@@ -429,3 +429,99 @@ class CoordinatorAgent(BaseAgent):
 
     async def handle_conflict_payload(self, payload: dict) -> dict:
         return await self.handle_conflict(int(payload["conflict_id"]))
+
+    async def handle_conflicts_batch(self, conflict_ids: list) -> dict:
+        """Negotiate several conflicts together: one global gather across all
+        displaced classes, a greedy conflict-free allocation (a room claimed
+        by one move cannot be claimed by another in the same round), then a
+        guardrailed application of each move with one summary notification."""
+        cid = f"batch-{uuid.uuid4().hex[:8]}"
+        conflicts = [repo.get_conflict(i) for i in conflict_ids]
+        conflicts = [c for c in conflicts if c and c["status"] == "open"]
+        assignments, unresolved = [], []
+        claimed: list = []  # (room_id, day, start, end) reserved in this batch
+
+        for conflict in conflicts:
+            involved = [conflict["booking_a_id"], conflict["booking_b_id"]]
+            bookings = [repo.get_booking_full(i) for i in involved if i]
+            bookings = [b for b in bookings if b]
+            if not bookings:
+                unresolved.append({"conflict_id": conflict["id"], "reason": "no bookings"})
+                continue
+            mover = next(b for b in bookings if b["id"] == self._pick_mover(bookings))
+            response = await self.bus.call(self.name, "availability", "query", {
+                "day": mover["day"],
+                "start_time": mover["start_time"],
+                "end_time": mover["end_time"],
+                "min_capacity": mover["enrolled"],
+                "required_equipment": mover["required_equipment"],
+                "exclude_room_ids": sorted({b["room_id"] for b in bookings}),
+                "prefer_building": self._preferred_building(mover),
+                "instructor": mover["instructor"],
+                "exclude_booking_ids": [b["id"] for b in bookings],
+                "context": {
+                    "enrolled": mover["enrolled"],
+                    "required_equipment": mover["required_equipment"],
+                    "current_building": mover["building"],
+                    "current_slot": {"day": mover["day"], "start": mover["start_time"],
+                                     "end": mover["end_time"]},
+                },
+            }, cid)
+            candidates = response.get("candidates", []) if isinstance(response, dict) else []
+
+            placed = False
+            for candidate in candidates:
+                slot = candidate["slot"]
+                claimed_here = any(
+                    candidate["room_id"] == room_id and day == mover["day"]
+                    and repo.overlaps(start, end, slot["start"], slot["end"])
+                    for room_id, day, start, end in claimed)
+                if claimed_here:
+                    continue
+                score, breakdown = scoring.score_candidate({
+                    "enrolled": mover["enrolled"],
+                    "required_equipment": mover["required_equipment"],
+                    "current_building": mover["building"],
+                    "current_slot": {"day": mover["day"], "start": mover["start_time"],
+                                     "end": mover["end_time"]},
+                }, candidate, slot, self._preferred_building(mover))
+                proposal_id = repo.insert_proposal(
+                    conflict["id"], 1, "move_booking", mover["id"], candidate["room_id"],
+                    slot["day"], slot["start"], slot["end"], score,
+                    json.dumps(breakdown), "Batch allocation by the Coordinator Agent.", "proposed")
+                result = apply_proposal(proposal_id)
+                if result["ok"]:
+                    claimed.append((candidate["room_id"], mover["day"],
+                                    slot["start"], slot["end"]))
+                    assignments.append({"conflict_id": conflict["id"], "course": mover["code"],
+                                        "room": candidate["room_name"], "score": score,
+                                        "proposal_id": proposal_id})
+                    placed = True
+                    break
+            if not placed:
+                unresolved.append({"conflict_id": conflict["id"], "course": mover["code"]})
+                if repo.get_conflict(conflict["id"])["status"] == "open":
+                    repo.set_conflict_status(conflict["id"], "escalated")
+
+        items = []
+        if assignments:
+            items.append({
+                "audience": "admin",
+                "subject": f"Batch round settled {len(assignments)} conflict(s)",
+                "body": ("One negotiation pass reallocated: "
+                         + "; ".join(f"{a['course']} to {a['room']}" for a in assignments)),
+            })
+        if unresolved:
+            items.append({
+                "audience": "admin",
+                "subject": "Batch round left conflicts open",
+                "body": ("No safe reallocation found for: "
+                         + ", ".join(f"#{u['conflict_id']} ({u.get('course', '?')})"
+                                     for u in unresolved)),
+            })
+        if items:
+            await self.bus.call(self.name, "notifications", "dispatch",
+                                {"conflict_id": None, "items": items}, cid)
+        self.log_event("batch_negotiation",
+                       {"applied": len(assignments), "unresolved": len(unresolved)})
+        return {"applied": assignments, "unresolved": unresolved}

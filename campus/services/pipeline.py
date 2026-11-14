@@ -15,15 +15,22 @@ async def scan_and_resolve() -> dict:
     handled = []
     if summary["new_conflicts"]:
         coordinator = get_agent("coordinator")
-        for conflict in summary["conflicts"]:
-            result = await coordinator.handle_conflict(conflict["id"])
-            handled.append({
-                "conflict_id": conflict["id"],
-                "type": conflict["type"],
-                "decision": result["decision"],
-                "best": result.get("best") or {},
-                "moved_booking_id": result.get("moved_booking_id"),
-            })
+        conflict_ids = [c["id"] for c in summary["conflicts"]]
+        if len(conflict_ids) > 1:
+            # several conflicts at once: negotiate them jointly in one round
+            batch = await coordinator.handle_conflicts_batch(conflict_ids)
+            return {"scan": {"scanned_bookings": summary["scanned_bookings"],
+                             "new_conflicts": summary["new_conflicts"]},
+                    "batch": batch,
+                    "handled": handled}
+        result = await coordinator.handle_conflict(conflict_ids[0])
+        handled.append({
+            "conflict_id": conflict_ids[0],
+            "type": summary["conflicts"][0]["type"],
+            "decision": result["decision"],
+            "best": result.get("best") or {},
+            "moved_booking_id": result.get("moved_booking_id"),
+        })
     return {"scan": {"scanned_bookings": summary["scanned_bookings"],
                      "new_conflicts": summary["new_conflicts"]},
             "handled": handled}
