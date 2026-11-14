@@ -66,6 +66,8 @@ class SafeLLM:
                             block.get("text", "") for block in text if isinstance(block, dict)
                         )
                     self._cache[key] = text
+                    if len(self._cache) > 256:  # keep the cache bounded
+                        self._cache.pop(next(iter(self._cache)))
                     return text
                 except Exception as exc:  # rate limit, network, quota...
                     log.warning("LLM provider %s failed (attempt %d): %s", name, attempt + 1, exc)
