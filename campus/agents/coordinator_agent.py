@@ -61,6 +61,13 @@ def apply_proposal(proposal_id: int) -> dict:
     if not proposal or proposal["status"] in ("applied", "rejected"):
         return {"ok": False, "reason": "proposal missing or already decided"}
     conflict = repo.get_conflict(proposal["conflict_id"])
+    if not conflict:
+        return {"ok": False, "reason": "conflict missing"}
+    if conflict["status"] not in ("open", "pending_approval"):
+        return {"ok": False, "reason": "conflict already resolved or escalated"}
+    mover = repo.get_booking_full(proposal["booking_id"])
+    if not mover:
+        return {"ok": False, "reason": "booking missing"}
     involved = [i for i in (conflict["booking_a_id"], conflict["booking_b_id"]) if i]
     free = repo.room_free(
         proposal["new_room_id"], proposal["new_day"], proposal["new_start"],
@@ -71,7 +78,6 @@ def apply_proposal(proposal_id: int) -> dict:
         repo.set_conflict_status(conflict["id"], "escalated")
         return {"ok": False, "reason": "slot no longer free - conflict escalated"}
     # revalidate instructor availability at the destination slot
-    mover = repo.get_booking_full(proposal["booking_id"])
     instructor_busy = any(
         b["instructor"] == mover["instructor"]
         and b["day"] == proposal["new_day"]
@@ -106,6 +112,11 @@ def reject_proposal(proposal_id: int) -> dict:
     proposal = repo.get_proposal(proposal_id)
     if not proposal:
         return {"ok": False, "reason": "unknown proposal"}
+    if proposal["status"] in ("applied", "rejected"):
+        return {"ok": False, "reason": "proposal already decided"}
+    conflict = repo.get_conflict(proposal["conflict_id"])
+    if not conflict or conflict["status"] == "resolved":
+        return {"ok": False, "reason": "conflict already resolved"}
     repo.set_proposal_status(proposal_id, "rejected")
     repo.set_conflict_status(proposal["conflict_id"], "escalated")
     return {"ok": True}
@@ -251,7 +262,7 @@ class CoordinatorAgent(BaseAgent):
         )
         if self.llm.available() and rows:
             options = [
-                {"index": r["idx"], "room": r["room_name"], "building": r["building"],
+                {"room": r["room_name"], "building": r["building"],
                  "capacity": r["capacity"], "equipment": r["equipment"], "score": r["score"],
                  "slot": r["slot"]}
                 for r in rows
@@ -285,6 +296,7 @@ class CoordinatorAgent(BaseAgent):
                     if repo.room_free(best_row["room_id"], slot["day"], s2, e2,
                                       exclude_booking_ids=involved):
                         best_row["slot"] = {"day": slot["day"], "start": s2, "end": e2}
+                        repo.update_proposal_slot(best_row["id"], slot["day"], s2, e2)
                         score, breakdown = scoring.score_candidate(ctx, best_row, best_row["slot"])
                         repo.update_proposal_score(best_row["id"], score, json.dumps(breakdown))
                         best_row["score"], best_row["breakdown"] = score, breakdown

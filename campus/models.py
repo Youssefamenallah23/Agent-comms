@@ -16,7 +16,7 @@ class AvailabilityQuery(BaseModel):
     day: str = "Mon"
     start_time: str = "08:00"
     end_time: str = "10:00"
-    min_capacity: int = 1
+    min_capacity: int = Field(1, ge=1)
     required_equipment: list[str] = Field(default_factory=list)
     exclude_room_ids: list[int] = Field(default_factory=list)
     prefer_building: Optional[str] = None

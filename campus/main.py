@@ -52,6 +52,8 @@ async def lifespan(app: FastAPI):
     yield
     for task in tasks:
         task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
@@ -78,7 +80,13 @@ async def ws_trace(websocket: WebSocket):
     queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
     def on_message(message: dict) -> None:
-        loop.call_soon_threadsafe(queue.put_nowait, message)
+        def deliver() -> None:
+            try:
+                queue.put_nowait(message)
+            except asyncio.QueueFull:
+                pass
+
+        loop.call_soon_threadsafe(deliver)
 
     repo.subscribe_messages(on_message)
     try:

@@ -251,7 +251,7 @@ def room_utilization() -> list[dict]:
         hours[row["room_id"]] = hours.get(row["room_id"], 0.0) + (
             minutes(row["end_time"]) - minutes(row["start_time"])
         ) / 60.0
-    weekly_capacity = 5 * 8.0  # Mon-Fri on the 08:00-18:00 grid
+    weekly_capacity = 5 * 10.0  # Mon-Fri, 08:00-18:00 grid
     out = []
     for room in rooms:
         used = hours.get(room["id"], 0.0)
@@ -293,11 +293,17 @@ def all_conflicts(limit: int = 50) -> list[dict]:
 
 
 def set_conflict_status(conflict_id: int, status: str) -> None:
-    resolved_at = now_iso() if status == "resolved" else None
-    execute(
-        "UPDATE conflicts SET status = ?, resolved_at = COALESCE(?, resolved_at) WHERE id = ?",
-        (status, resolved_at, conflict_id),
-    )
+    if status == "resolved":
+        execute(
+            "UPDATE conflicts SET status = ?,"
+            " resolved_at = COALESCE(resolved_at, ?) WHERE id = ?",
+            (status, now_iso(), conflict_id),
+        )
+    else:
+        execute(
+            "UPDATE conflicts SET status = ?, resolved_at = NULL WHERE id = ?",
+            (status, conflict_id),
+        )
 
 
 def set_conflict_analysis(conflict_id: int, analysis: str) -> None:
@@ -331,6 +337,17 @@ def set_proposal_status(proposal_id: int, status: str) -> None:
 def update_proposal_score(proposal_id: int, score: float, breakdown: str) -> None:
     execute("UPDATE proposals SET score = ?, breakdown = ? WHERE id = ?",
             (score, breakdown, proposal_id))
+
+
+def update_proposal_slot(proposal_id: int, day: str, start: str, end: str) -> None:
+    execute("UPDATE proposals SET new_day = ?, new_start = ?, new_end = ? WHERE id = ?",
+            (day, start, end, proposal_id))
+
+
+def count_proposals(status: str | None = None) -> int:
+    row = (query_one("SELECT COUNT(*) AS c FROM proposals WHERE status = ?", (status,))
+           if status else query_one("SELECT COUNT(*) AS c FROM proposals"))
+    return row["c"] if row else 0
 
 
 def update_proposal_reasoning(proposal_id: int, reasoning: str) -> None:
@@ -407,6 +424,12 @@ def mark_notification_sent(notification_id: int) -> None:
 
 def recent_notifications(limit: int = 20) -> list[dict]:
     return query("SELECT * FROM notifications ORDER BY id DESC LIMIT ?", (limit,))
+
+
+def count_notifications(status: str | None = None) -> int:
+    row = (query_one("SELECT COUNT(*) AS c FROM notifications WHERE status = ?", (status,))
+           if status else query_one("SELECT COUNT(*) AS c FROM notifications"))
+    return row["c"] if row else 0
 
 
 # ---------------------------------------------------------------- events / chats

@@ -94,8 +94,8 @@ async def state():
             "conflicts_open": len(repo.open_conflicts()),
             "conflicts_resolved": repo.conflict_stats()["by_status"].get("resolved", 0),
             "pending_approvals": repo.conflict_stats()["by_status"].get("pending_approval", 0),
-            "auto_resolved": len([p for p in _all_applied_proposals()]),
-            "notifications_sent": len(repo.recent_notifications(1000)),
+            "auto_resolved": repo.count_proposals("applied"),
+            "notifications_sent": repo.count_notifications("sent"),
             "relocations": len(moved),
             "llm": runtime.llm_status(),
         },
@@ -111,8 +111,30 @@ async def state():
     }
 
 
-def _all_applied_proposals():
-    return repo.query("SELECT id FROM proposals WHERE status = 'applied'")
+@router.get("/data")
+async def all_data():
+    """Every table in one payload so the dashboard can present a complete,
+    searchable view of what the agents know."""
+    proposals = repo.query(
+        "SELECT p.*, r.name AS new_room FROM proposals p"
+        " LEFT JOIN rooms r ON r.id = p.new_room_id ORDER BY p.id DESC")
+    return {
+        "rooms": repo.all_rooms(),
+        "courses": repo.all_courses(),
+        "bookings": repo.all_bookings(),
+        "conflicts": repo.all_conflicts(500),
+        "proposals": proposals,
+        "messages": repo.recent_messages(300),
+        "notifications": repo.recent_notifications(300),
+        "events": repo.recent_events(300),
+        "agents": (await agents_status())["agents"],
+        "students": repo.query(
+            "SELECT id, name, email, created_at FROM students ORDER BY id"),
+        "enrollments": repo.query(
+            "SELECT e.id, s.name AS student, s.email, e.course_code FROM enrollments e"
+            " JOIN students s ON s.id = e.student_id ORDER BY e.id"),
+        "preferences": repo.query("SELECT * FROM preferences ORDER BY weight DESC"),
+    }
 
 
 # ------------------------------------------------------------------ pipeline
@@ -125,6 +147,8 @@ async def run_pipeline():
 @router.post("/simulate/seed")
 async def seed_route(request: SeedRequest):
     created = seed.seed_data(force=request.force)
+    if created:
+        seed.seed_demo_student()
     return {"seeded": created}
 
 
@@ -255,6 +279,7 @@ async def schedule_scan():
 
 @router.post("/agents/availability/query")
 async def availability_query(request: AvailabilityQuery):
+    _validate_slot(request.day, request.start_time, request.end_time)
     return await runtime.get_agent("availability").run_query(request.model_dump())
 
 
@@ -445,6 +470,8 @@ async def reject_proposal_route(proposal_id: int):
     if not proposal:
         raise HTTPException(status_code=404, detail="proposal not found")
     result = reject_proposal(proposal_id)
+    if not result["ok"]:
+        raise HTTPException(status_code=409, detail=result.get("reason", "cannot reject"))
     repo.insert_notification(
         "admin",
         f"Proposal #{proposal_id} rejected",
