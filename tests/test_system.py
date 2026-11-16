@@ -372,3 +372,89 @@ def test_notifications_feed_and_chat_history_endpoints():
     assert [h["role"] for h in history] == ["user", "assistant"]
     assert history[0]["content"] == "where is CS101?"
     assert "CS101" in history[1]["content"]
+
+
+def test_availability_query_rejects_invalid_slots():
+    client = TestClient(app)
+    bad_day = client.post("/api/agents/availability/query", json={
+        "day": "Sat", "start_time": "08:00", "end_time": "10:00"})
+    assert bad_day.status_code == 422
+    bad_time = client.post("/api/agents/availability/query", json={
+        "day": "Mon", "start_time": "07:00", "end_time": "10:00"})
+    assert bad_time.status_code == 422
+
+
+def test_utilization_uses_full_ten_hour_weekday_grid():
+    used = {}
+    for booking in repo.all_bookings():
+        used[booking["room_id"]] = used.get(booking["room_id"], 0.0) + (
+            repo.minutes(booking["end_time"]) - repo.minutes(booking["start_time"])
+        ) / 60.0
+    for room in repo.room_utilization():
+        expected = round(100.0 * used.get(room["id"], 0.0) / 50.0, 1)
+        assert room["utilization"] == expected
+
+
+def test_reopening_conflict_clears_resolved_timestamp():
+    conflict_id = repo.insert_conflict(
+        "double_booking", None, None, None, "timestamp regression test", "low")
+    try:
+        repo.set_conflict_status(conflict_id, "resolved")
+        assert repo.get_conflict(conflict_id)["resolved_at"]
+        repo.set_conflict_status(conflict_id, "pending_approval")
+        assert repo.get_conflict(conflict_id)["resolved_at"] is None
+    finally:
+        repo.execute("DELETE FROM conflicts WHERE id = ?", (conflict_id,))
+
+
+def test_proposal_slot_updates_are_persisted():
+    conflict_id = repo.insert_conflict(
+        "double_booking", None, None, None, "proposal slot regression test", "low")
+    proposal_id = repo.insert_proposal(
+        conflict_id, 1, "move_booking", None, None,
+        "Mon", "08:00", "10:00", 0.5, "{}", "", "proposed")
+    try:
+        repo.update_proposal_slot(proposal_id, "Tue", "10:00", "12:00")
+        proposal = repo.get_proposal(proposal_id)
+        assert (proposal["new_day"], proposal["new_start"], proposal["new_end"]) == (
+            "Tue", "10:00", "12:00")
+    finally:
+        repo.execute("DELETE FROM proposals WHERE id = ?", (proposal_id,))
+        repo.execute("DELETE FROM conflicts WHERE id = ?", (conflict_id,))
+
+
+def test_seed_route_recreates_demo_student(monkeypatch):
+    from campus.api import routes as api_routes
+    from campus.models import SeedRequest
+
+    calls = []
+
+    def fake_seed(force):
+        calls.append(("seed", force))
+        return True
+
+    def fake_demo():
+        calls.append(("demo",))
+        return True
+
+    monkeypatch.setattr(api_routes.seed, "seed_data", fake_seed)
+    monkeypatch.setattr(api_routes.seed, "seed_demo_student", fake_demo)
+    result = asyncio.run(api_routes.seed_route(SeedRequest(force=True)))
+    assert result == {"seeded": True}
+    assert calls == [("seed", True), ("demo",)]
+
+
+def test_state_counts_only_sent_notifications():
+    client = TestClient(app)
+    notification_id = repo.insert_notification(
+        "admin", "Pending metric regression", "must not count as sent")
+    try:
+        state = client.get("/api/state").json()
+        sent = repo.query_one(
+            "SELECT COUNT(*) AS c FROM notifications WHERE status = 'sent'")["c"]
+        applied = repo.query_one(
+            "SELECT COUNT(*) AS c FROM proposals WHERE status = 'applied'")["c"]
+        assert state["stats"]["notifications_sent"] == sent
+        assert state["stats"]["auto_resolved"] == applied
+    finally:
+        repo.execute("DELETE FROM notifications WHERE id = ?", (notification_id,))
